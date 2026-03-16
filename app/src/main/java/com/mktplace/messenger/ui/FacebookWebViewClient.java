@@ -16,12 +16,14 @@ public class FacebookWebViewClient extends WebViewClient {
 
     private static final String[] FACEBOOK_HOSTS = {
         "www.facebook.com", "facebook.com", "m.facebook.com",
-        "web.facebook.com", "l.facebook.com"
+        "web.facebook.com", "l.facebook.com",
+        "mbasic.facebook.com"   // plain-HTML interface used for messages tab
     };
 
     // Paths on facebook.com that are explicitly allowed
     private static final String[] ALLOWED_FB_PREFIXES = {
-        "/marketplace",              // browse + inbox lives under here
+        "/marketplace",              // browse listings
+        "/messages",                 // mbasic messages
         "/login", "/checkpoint",
         "/recover", "/two_step_verification", "/rsrc.php"
     };
