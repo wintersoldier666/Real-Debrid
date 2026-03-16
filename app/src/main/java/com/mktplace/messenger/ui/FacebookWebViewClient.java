@@ -31,8 +31,9 @@ public class FacebookWebViewClient extends WebViewClient {
         "/stories", "/story", "/events", "/groups", "/pages",
         "/gaming", "/jobs", "/news", "/ads", "/fundraisers",
         "/friends", "/notifications", "/hashtag", "/photos",
-        "/live", "/memories", "/saved",
-        "/messages"   // /messages → download-Messenger page; use /marketplace/inbox instead
+        "/live", "/memories", "/saved"
+        // NOTE: /messages is intentionally NOT blocked — the Messages tab uses
+        // a desktop UA so facebook.com/messages/ works without an app redirect
     };
 
     private final Callbacks callbacks;

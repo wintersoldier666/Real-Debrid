@@ -24,8 +24,22 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    // Marketplace inbox — stays inside facebook.com, no Messenger app needed
-    private static final String URL_MESSAGES    = "https://www.facebook.com/marketplace/inbox/";
+    // Desktop facebook.com/messages/ works without any app redirect;
+    // the mobile site always redirects to "download Messenger"
+    private static final String URL_MESSAGES    = "https://www.facebook.com/messages/";
+
+    // Mobile Chrome UA → used for Marketplace (mobile-optimised layout)
+    private static final String UA_MOBILE =
+        "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/120.0.6099.210 Mobile Safari/537.36";
+
+    // Desktop Chrome UA → used for Messages tab so Facebook serves the full
+    // web Messenger without the "get the app" interstitial
+    private static final String UA_DESKTOP =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/120.0.0.0 Safari/537.36";
 
     private static final int TAB_MARKETPLACE = 0;
     private static final int TAB_MESSAGES    = 1;
@@ -111,11 +125,7 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
-        // Full Chrome UA — no "wv" tag so Facebook doesn't trigger "open in app"
-        s.setUserAgentString(
-            "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/120.0.6099.210 Mobile Safari/537.36");
+        s.setUserAgentString(UA_MOBILE); // default; swapped per-tab in loadTab()
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -188,6 +198,11 @@ public class MainActivity extends Activity {
         currentTab = tab;
         hideAllOverlays();
         if (!isNetworkAvailable()) { showError(); return; }
+
+        // Desktop UA for Messages so Facebook serves the full web Messenger
+        // instead of the "download the app" interstitial
+        webView.getSettings().setUserAgentString(
+            tab == TAB_MESSAGES ? UA_DESKTOP : UA_MOBILE);
 
         String url = (tab == TAB_MARKETPLACE) ? URL_MARKETPLACE : URL_MESSAGES;
         tvTitle.setText(tab == TAB_MARKETPLACE ? "Marketplace" : "Messages");
