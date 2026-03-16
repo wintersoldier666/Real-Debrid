@@ -24,9 +24,8 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    // mbasic.facebook.com is Facebook's plain-HTML interface — no JS redirects,
-    // serves messages as static HTML without pushing to the Messenger app.
-    private static final String URL_MESSAGES    = "https://mbasic.facebook.com/messages/";
+    // Desktop UA means www.facebook.com/messages/ works as full web chat — no app prompts.
+    private static final String URL_MESSAGES    = "https://www.facebook.com/messages/";
 
     // Desktop UA: Facebook serves full desktop site with no "Open in app" banners,
     // no mobile bottom-nav tabs, and messages open as web UI instead of app redirects.
@@ -54,34 +53,14 @@ public class MainActivity extends Activity {
 
     private FacebookWebViewClient fbClient;
 
-    // JS → Java bridge: the injected pushState interceptor calls FBLite.onNav(url)
-    // whenever Facebook's SPA navigates to a new URL without a real page load.
+    // JS → Java bridge: called by the injected pushState/replaceState interceptor
+    // whenever Facebook's SPA navigates without a real page load.
     private class NavBridge {
         @JavascriptInterface
         public void onNav(final String url) {
             webView.post(new Runnable() {
                 @Override public void run() {
-                    if (url == null || fbClient == null) return;
-
-                    // Resolve path from either a full URL or a relative path
-                    String path = url;
-                    if (url.startsWith("http://") || url.startsWith("https://")) {
-                        try {
-                            path = android.net.Uri.parse(url).getPath();
-                            if (path == null) path = "/";
-                        } catch (Exception e) { path = "/"; }
-                    } else if (!path.startsWith("/")) {
-                        path = "/" + path;
-                    }
-
-                    // Marketplace "Message Seller" uses pushState to /messages/t/THREAD_ID
-                    // Redirect those to mbasic so they open as plain HTML, no app prompt
-                    if (path.startsWith("/messages/")) {
-                        webView.loadUrl("https://mbasic.facebook.com" + path);
-                        return;
-                    }
-
-                    if (fbClient.isBlocked(url)) {
+                    if (url != null && fbClient != null && fbClient.isBlocked(url)) {
                         redirectToCurrentTab();
                     }
                 }
@@ -199,6 +178,7 @@ public class MainActivity extends Activity {
     private void loadTab(int tab) {
         currentTab = tab;
         hideAllOverlays();
+        webView.stopLoading();
         if (!isNetworkAvailable()) { showError(); return; }
         String url = (tab == TAB_MARKETPLACE) ? URL_MARKETPLACE : URL_MESSAGES;
         tvTitle.setText(tab == TAB_MARKETPLACE ? "Marketplace" : "Messages");

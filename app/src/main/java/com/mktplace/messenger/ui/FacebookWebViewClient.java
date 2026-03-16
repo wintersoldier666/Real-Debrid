@@ -41,28 +41,11 @@ public class FacebookWebViewClient extends WebViewClient {
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
         if (url == null) return true;
 
-        // Messenger / app deep-links — redirect to mbasic messages instead of
-        // silently blocking (so "Message Seller" actually works)
+        // Drop all app-scheme deep-links silently — desktop UA means Facebook
+        // won't generate these anyway, but block them as a safety net
         if (url.startsWith("fb://") || url.startsWith("fbmessenger://")
-                || url.startsWith("fbrpc://")) {
-            view.loadUrl("https://mbasic.facebook.com/messages/");
-            return true;
-        }
-        if (url.startsWith("intent://") || url.startsWith("market://")) {
-            // Non-messenger app intents — drop silently
-            return true;
-        }
-
-        // Redirect www.facebook.com/messages/* → mbasic so threads load
-        // as plain HTML without "Download Messenger" interstitials
-        if (url.startsWith("https://www.facebook.com/messages/")) {
-            String rest = url.substring("https://www.facebook.com/messages/".length());
-            view.loadUrl("https://mbasic.facebook.com/messages/" + rest);
-            return true;
-        }
-        if (url.startsWith("http://www.facebook.com/messages/")) {
-            String rest = url.substring("http://www.facebook.com/messages/".length());
-            view.loadUrl("https://mbasic.facebook.com/messages/" + rest);
+                || url.startsWith("fbrpc://")
+                || url.startsWith("intent://") || url.startsWith("market://")) {
             return true;
         }
 
@@ -234,54 +217,47 @@ public class FacebookWebViewClient extends WebViewClient {
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
             // ── 5. Ad blocking ──────────────────────────────────────────────
             "  function hideAds(){\n" +
-            // Standard ad markers Facebook uses on sponsored posts / listings
+            // Method 1: standard ad-marker attributes
             "    try{\n" +
-            "      document.querySelectorAll(\n" +
-            "        '[data-ad-comet-preview],[data-ad-preview],[data-adunit-id],\n" +
-            "         [aria-label=\"Sponsored\"]\n" +
-            "      ').forEach(function(el){\n" +
-            "        var root=el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el;\n" +
-            "        root.style.setProperty('display','none','important');\n" +
+            "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id],[aria-label=\"Sponsored\"]').forEach(function(el){\n" +
+            "        (el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el)\n" +
+            "          .style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Desktop right-rail ad column
+            // Method 2: desktop right-rail ad column
             "    try{\n" +
             "      document.querySelectorAll('[data-pagelet=\"RightRail\"],[data-pagelet*=\"AdUnit\"]').forEach(function(el){\n" +
             "        el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Marketplace sponsored listings — identified by a "Sponsored" label span
+            // Method 3: TreeWalker finds any text node whose value is exactly
+            // "Sponsored" — walks up the DOM until it finds a card-sized element
+            // (offsetWidth > 100 && offsetHeight > 100) and hides it.
+            // This catches marketplace sponsored listings regardless of class names.
             "    try{\n" +
-            "      document.querySelectorAll('span[aria-label=\"Sponsored\"],span[dir]').forEach(function(el){\n" +
-            "        if(el.textContent.trim()==='Sponsored'){\n" +
-            "          var card=el.closest('[role=\"listitem\"]')||el.closest('[role=\"article\"]')||el.closest('li');\n" +
-            "          if(card) card.style.setProperty('display','none','important');\n" +
+            "      var tw=document.createTreeWalker(document.body||document.documentElement,4,{\n" +
+            "        acceptNode:function(n){\n" +
+            "          var v=n.nodeValue?n.nodeValue.trim():'';\n" +
+            "          return (v==='Sponsored'||v==='Gesponsert'||v==='Sponsorisé'||v==='Patrocinado')?1:3;\n" +
             "        }\n" +
             "      });\n" +
+            "      var n;\n" +
+            "      while((n=tw.nextNode())){\n" +
+            "        var el=n.parentElement;\n" +
+            "        for(var i=0;i<12&&el;i++){\n" +
+            "          if(el.offsetWidth>100&&el.offsetHeight>80){\n" +
+            "            el.style.setProperty('display','none','important');\n" +
+            "            break;\n" +
+            "          }\n" +
+            "          el=el.parentElement;\n" +
+            "        }\n" +
+            "      }\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideAds();\n" +
             "  setTimeout(hideAds,600); setTimeout(hideAds,2000); setTimeout(hideAds,5000);\n" +
-            // ── 7. Click interceptor: rewrite message links to mbasic ────────
-            // Catches the case where Facebook renders the Message button as a
-            // regular <a> but shouldOverrideUrlLoading doesn't fire (e.g. same-origin)
-            "  if(!window.__fbLiteClick){\n" +
-            "    window.__fbLiteClick=true;\n" +
-            "    document.addEventListener('click',function(e){\n" +
-            "      var el=e.target;\n" +
-            "      for(var i=0;i<6;i++){\n" +
-            "        if(!el||el===document) break;\n" +
-            "        if(el.tagName==='A'&&el.href&&el.href.indexOf('facebook.com/messages/')>=0){\n" +
-            "          e.preventDefault();\n" +
-            "          e.stopPropagation();\n" +
-            "          var u=el.href.replace(/https?:\\/\\/(?:www\\.|m\\.)?facebook\\.com\\/messages\\//,'https://mbasic.facebook.com/messages/');\n" +
-            "          window.location.href=u;\n" +
-            "          return;\n" +
-            "        }\n" +
-            "        el=el.parentElement;\n" +
-            "      }\n" +
-            "    },true);\n" +
-            "  }\n" +
+            // ── 7. (no click interceptor needed — desktop www.facebook.com/messages/ works directly) ──
+
             // ── 8. Intercept SPA pushState/replaceState ──────────────────────
             "  if(!window.__fbLitePatched){\n" +
             "    window.__fbLitePatched=true;\n" +
