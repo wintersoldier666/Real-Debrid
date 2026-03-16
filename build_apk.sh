@@ -15,7 +15,7 @@ OBJ="$BUILD/obj"
 DEX="$BUILD/dex"
 APK_UNSIGNED="$BUILD/app-unsigned.apk"
 APK_ALIGNED="$BUILD/app-aligned.apk"
-APK_SIGNED="$BUILD/facebook-lite.apk"
+APK_SIGNED="$BUILD/marketplace-lite.apk"
 
 # ---- Clean ----
 rm -rf "$BUILD"

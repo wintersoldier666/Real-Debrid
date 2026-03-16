@@ -294,11 +294,20 @@ public class FacebookWebViewClient extends WebViewClient {
             "    history.replaceState=function(s,t,u){ _replace.call(history,s,t,u); notifyAndroid(u||location.href); };\n" +
             "    window.addEventListener('popstate',function(){ notifyAndroid(location.href); });\n" +
             "  }\n" +
-            // ── 9. MutationObserver re-runs hideNav + clean + hideAds on DOM changes ─
+            // ── 9. MutationObserver ───────────────────────────────────────────
+            // hideNav + clean run immediately on each mutation (they use CSS/setProperty,
+            // no layout needed). hideAds is DEBOUNCED: infinite-scroll inserts new
+            // listing cards in batches; if we run hideAds() synchronously the cards
+            // haven't been laid out yet (offsetWidth=0) so the dimension fallback misses
+            // them. Waiting 150 ms lets the browser finish rendering before we scan.
             "  if(!window.__fbLiteObs){\n" +
             "    window.__fbLiteObs=true;\n" +
-            "    try{ new MutationObserver(function(){ hideNav(); clean(); hideAds(); })\n" +
-            "      .observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
+            "    var _adsTimer=null;\n" +
+            "    try{ new MutationObserver(function(){\n" +
+            "      hideNav(); clean();\n" +
+            "      clearTimeout(_adsTimer);\n" +
+            "      _adsTimer=setTimeout(hideAds,150);\n" +
+            "    }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
             "  }\n" +
             "})();\n";
 
