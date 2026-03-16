@@ -19,17 +19,24 @@ public class FacebookWebViewClient extends WebViewClient {
         "web.facebook.com", "l.facebook.com", "mbasic.facebook.com"
     };
 
-    // Allowlist: ONLY these path prefixes are permitted on facebook.com.
-    // Everything else (feed, watch, profile pages, groups, etc.) is blocked
-    // and redirected back to the current tab.
-    private static final String[] ALLOWED_PATH_PREFIXES = {
-        "/marketplace",
-        "/messages",
-        "/login",
-        "/checkpoint",
-        "/two_step_verification",
-        "/recover",
-        "/ajax"
+    // Sections to block on facebook.com.
+    // Matching: path == section OR path starts with section + "/"
+    public static final String[] BLOCKED_SECTIONS = {
+        "/feed", "/video", "/watch", "/reels", "/reel",
+        "/stories", "/story", "/events", "/groups", "/pages",
+        "/gaming", "/jobs", "/news", "/ads", "/fundraisers",
+        "/friends", "/notifications", "/hashtag", "/photos",
+        "/live", "/memories", "/saved",
+        "/search", "/profile.php", "/people"
+    };
+
+    // Single-segment paths that are known safe Facebook features.
+    // Anything else at the top level (e.g. /{username}) is treated as a
+    // profile page and blocked.
+    private static final String[] SAFE_TOP_LEVEL = {
+        "/marketplace", "/messages", "/login", "/checkout",
+        "/settings", "/privacy", "/help", "/checkpoint",
+        "/recover", "/two_step_verification", "/ajax", "/dialog"
     };
 
     private final Callbacks callbacks;
@@ -83,12 +90,16 @@ public class FacebookWebViewClient extends WebViewClient {
     /**
      * Returns true if this URL should be blocked.
      *
-     * Uses an allowlist: only /marketplace, /messages, and auth-related paths
-     * are permitted. Everything else — feed, watch, profile pages, groups, etc. —
-     * is blocked and redirected back to the current tab.
+     * Strategy: blocklist for known social sections + profile-page detection.
+     *
+     * - Known social sections (BLOCKED_SECTIONS) are always blocked.
+     * - The root "/" is blocked (home/newsfeed).
+     * - Single-segment paths not in SAFE_TOP_LEVEL are blocked — this catches
+     *   profile pages like /{username} without needing to enumerate every username.
+     * - Everything else is allowed (marketplace subcategories, messages threads, etc.)
      *
      * Handles both absolute URLs (shouldOverrideUrlLoading) and relative paths
-     * (SPA pushState/replaceState bridge passing e.g. "/watch" or "/feed").
+     * (SPA pushState/replaceState bridge passing e.g. "/watch" or "/JohnDoe").
      */
     public boolean isBlocked(String url) {
         if (url == null || url.isEmpty()) return false;
@@ -103,7 +114,7 @@ public class FacebookWebViewClient extends WebViewClient {
             if (host == null) return false;
             host = host.toLowerCase();
 
-            // CDN / API assets — always allow
+            // CDN assets — always allow
             if (host.endsWith("fbcdn.net") || host.endsWith("facebook.net")
                     || host.endsWith("fbsbx.com")) return false;
 
@@ -120,17 +131,35 @@ public class FacebookWebViewClient extends WebViewClient {
 
         if (path == null || path.isEmpty()) path = "/";
 
-        // Normalise: strip query string, lowercase
+        // Strip query string, lowercase
         String pl = path.toLowerCase();
         int q = pl.indexOf('?');
         String seg = q >= 0 ? pl.substring(0, q) : pl;
         if (seg.isEmpty()) seg = "/";
 
-        // Allow only the listed prefixes — everything else is blocked
-        for (String allowed : ALLOWED_PATH_PREFIXES) {
-            if (seg.equals(allowed) || seg.startsWith(allowed + "/")) return false;
+        // Block root / home feed
+        if (seg.equals("/")) return true;
+
+        // Block known social sections
+        for (String section : BLOCKED_SECTIONS) {
+            if (seg.equals(section) || seg.startsWith(section + "/")) return true;
         }
-        return true;
+
+        // Block single-segment paths not in the safe list.
+        // Strip trailing slash then check: if no second '/' it's a single segment.
+        // e.g. "/JohnDoe" → single-segment, not in SAFE_TOP_LEVEL → blocked (profile page)
+        // e.g. "/marketplace" → single-segment, in SAFE_TOP_LEVEL → allowed
+        // e.g. "/marketplace/item/123" → multi-segment → falls through to return false
+        String segTrimmed = seg.endsWith("/") && seg.length() > 1
+                ? seg.substring(0, seg.length() - 1) : seg;
+        if (segTrimmed.indexOf('/', 1) < 0) {
+            for (String safe : SAFE_TOP_LEVEL) {
+                if (segTrimmed.equals(safe)) return false;
+            }
+            return true; // Unknown single-segment = profile page or unknown section
+        }
+
+        return false; // Multi-segment path not in blocked list → allow
     }
 
     private void injectCleanup(WebView view) {
@@ -146,13 +175,14 @@ public class FacebookWebViewClient extends WebViewClient {
             "  }catch(e){}\n" +
             // ── 2. CSS hide (fast initial paint) ────────────────────────────
             "  var H = [\n" +
-            // Top navigation bar (blue bar with Facebook logo + Home/Watch/Groups links)
+            // Top navigation bar — multiple selector variants cover Facebook A/B tests
             "    '[data-pagelet=\"NavBar\"]',\n" +
+            "    '[data-pagelet^=\"Nav\"]',\n" +           // catches NavBar, NavItems, etc.
             "    '[data-pagelet=\"MWNavigation\"]',\n" +
             "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
             // Desktop sidebars
-            "    '[data-pagelet=\"LeftRail\"]',\n" +           // left sidebar
-            "    '[data-pagelet=\"RightRail\"]',\n" +          // right sidebar (ads column)
+            "    '[data-pagelet=\"LeftRail\"]',\n" +
+            "    '[data-pagelet=\"RightRail\"]',\n" +
             // Mobile nav (fallback pages)
             "    '[data-pagelet=\"MobileBottomBar\"]',\n" +
             "    '[data-pagelet=\"MobileTopBar\"]',\n" +
@@ -161,26 +191,38 @@ public class FacebookWebViewClient extends WebViewClient {
             "    '[data-pagelet*=\"NewsFeed\"]',\n" +
             "    '[data-pagelet*=\"FeedUnit\"]',\n" +
             "    '[data-pagelet*=\"Stories\"]',\n" +
+            "    '[role=\"banner\"]','[role=\"navigation\"]',\n" +
             "    'header','nav'\n" +
             "  ];\n" +
             "  if(!document.getElementById('fb-lite-hide')){\n" +
             "    var s=document.createElement('style');\n" +
             "    s.id='fb-lite-hide';\n" +
-            "    s.textContent=H.join(',') + '{display:none!important}';\n" +
+            // display:none + pointer-events:none so clicks can't reach hidden elements
+            "    s.textContent=H.join(',') + '{display:none!important;pointer-events:none!important}';\n" +
             "    (document.head||document.documentElement).appendChild(s);\n" +
             "  }\n" +
-            // ── 3. JS force-hide nav (setProperty beats Facebook's inline styles) ─
+            // ── 3. JS force-hide nav ─────────────────────────────────────────
             "  function hideNav(){\n" +
             "    H.forEach(function(sel){\n" +
             "      try{ document.querySelectorAll(sel).forEach(function(el){\n" +
             "        el.style.setProperty('display','none','important');\n" +
+            "        el.style.setProperty('pointer-events','none','important');\n" +
             "      }); }catch(e){}\n" +
             "    });\n" +
-            // Hide role=banner (top app bar) and role=navigation unconditionally —
-            // we inject only on facebook.com so there's no risk of hiding unrelated UI
+            // Catch Facebook's top nav bar by its visual position: a fixed/sticky
+            // element that spans the full width and is ≤ 80px tall.
+            // This works even when Facebook changes data-pagelet attribute names.
             "    try{\n" +
-            "      document.querySelectorAll('[role=\"banner\"],[role=\"navigation\"]').forEach(function(el){\n" +
-            "        el.style.setProperty('display','none','important');\n" +
+            "      var topEls=document.body?Array.prototype.slice.call(document.body.children):[];\n" +
+            "      topEls.forEach(function(el){\n" +
+            "        try{\n" +
+            "          var cs=window.getComputedStyle(el);\n" +
+            "          if((cs.position==='fixed'||cs.position==='sticky')&&\n" +
+            "              el.offsetWidth>300&&el.offsetHeight>0&&el.offsetHeight<=80){\n" +
+            "            el.style.setProperty('display','none','important');\n" +
+            "            el.style.setProperty('pointer-events','none','important');\n" +
+            "          }\n" +
+            "        }catch(e2){}\n" +
             "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
@@ -222,14 +264,27 @@ public class FacebookWebViewClient extends WebViewClient {
             "  var SPONSORED_LABELS=['Sponsored','Promoted','Ad','Gesponsert','Sponsorisé','Patrocinado','Publicidad'];\n" +
             // Helper: given an element that contains the sponsored label, walk up to
             // find the card container and hide it.
+            //
+            // Facebook Marketplace ad card structure:
+            //   div.card_container   ← we want to hide THIS
+            //     a.card_link        ← same dimensions — SKIP for dimension check
+            //       div.image
+            //       div.info
+            //         span "Sponsored"  ← we start here
+            //
+            // Rule: semantic roles (li/article/listitem/gridcell) take priority.
+            // Dimension fallback ONLY fires on block-level elements (DIV/SECTION),
+            // never on inline elements (A/SPAN/IMG/etc.) so we don't stop at the
+            // <a> wrapper and instead reach the outer card div.
             "  function hideCard(el){\n" +
             "    for(var i=0;i<25&&el&&el!==document.body;i++){\n" +
             "      var tag=el.tagName;\n" +
             "      var role=(el.getAttribute&&el.getAttribute('role'))||'';\n" +
-            "      if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'||role==='feed'){\n" +
+            "      if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'){\n" +
             "        el.style.setProperty('display','none','important'); return;\n" +
             "      }\n" +
-            "      if(el.offsetWidth>120&&el.offsetHeight>120){\n" +
+            // Only use dimension check on block containers, not on inline/link elements
+            "      if((tag==='DIV'||tag==='SECTION')&&el.offsetWidth>120&&el.offsetHeight>120){\n" +
             "        el.style.setProperty('display','none','important'); return;\n" +
             "      }\n" +
             "      el=el.parentElement;\n" +
