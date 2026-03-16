@@ -146,12 +146,14 @@ public class FacebookWebViewClient extends WebViewClient {
             "  }catch(e){}\n" +
             // ── 2. CSS hide (fast initial paint) ────────────────────────────
             "  var H = [\n" +
-            // Desktop nav / chrome
-            "    '[data-pagelet=\"LeftRail\"]',\n" +           // left sidebar (Home/Watch/Groups links)
-            "    '[data-pagelet=\"RightRail\"]',\n" +          // right sidebar (ads column on desktop)
+            // Top navigation bar (blue bar with Facebook logo + Home/Watch/Groups links)
+            "    '[data-pagelet=\"NavBar\"]',\n" +
             "    '[data-pagelet=\"MWNavigation\"]',\n" +
             "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
-            // Mobile nav (still present on mbasic / fallback pages)
+            // Desktop sidebars
+            "    '[data-pagelet=\"LeftRail\"]',\n" +           // left sidebar
+            "    '[data-pagelet=\"RightRail\"]',\n" +          // right sidebar (ads column)
+            // Mobile nav (fallback pages)
             "    '[data-pagelet=\"MobileBottomBar\"]',\n" +
             "    '[data-pagelet=\"MobileTopBar\"]',\n" +
             // Feed / distraction sections
@@ -159,7 +161,7 @@ public class FacebookWebViewClient extends WebViewClient {
             "    '[data-pagelet*=\"NewsFeed\"]',\n" +
             "    '[data-pagelet*=\"FeedUnit\"]',\n" +
             "    '[data-pagelet*=\"Stories\"]',\n" +
-            "    'nav'\n" +
+            "    'header','nav'\n" +
             "  ];\n" +
             "  if(!document.getElementById('fb-lite-hide')){\n" +
             "    var s=document.createElement('style');\n" +
@@ -174,15 +176,16 @@ public class FacebookWebViewClient extends WebViewClient {
             "        el.style.setProperty('display','none','important');\n" +
             "      }); }catch(e){}\n" +
             "    });\n" +
+            // Hide role=banner (top app bar) and role=navigation unconditionally —
+            // we inject only on facebook.com so there's no risk of hiding unrelated UI
             "    try{\n" +
-            "      document.querySelectorAll('[role=\"navigation\"],[role=\"banner\"]').forEach(function(el){\n" +
-            "        if(el.querySelector('[aria-label=\"Home\"],[aria-label=\"Watch\"],[aria-label=\"Groups\"],[aria-label=\"Menu\"]'))\n" +
-            "          el.style.setProperty('display','none','important');\n" +
+            "      document.querySelectorAll('[role=\"banner\"],[role=\"navigation\"]').forEach(function(el){\n" +
+            "        el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideNav();\n" +
-            "  setTimeout(hideNav,300); setTimeout(hideNav,1000); setTimeout(hideNav,3000);\n" +
+            "  setTimeout(hideNav,200); setTimeout(hideNav,800); setTimeout(hideNav,2500);\n" +
             // ── 4. Remove "Open app" banners / install prompts ───────────────
             // Keywords that appear in Facebook's sticky "Open in Messenger / Get the app" bars
             "  var APP_TEXTS=['Open in Messenger','Get the Facebook app','Continue in app',\n" +
@@ -216,8 +219,9 @@ public class FacebookWebViewClient extends WebViewClient {
             "  clean();\n" +
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
             // ── 5. Ad blocking ──────────────────────────────────────────────
+            "  var SPONSORED_LABELS=['Sponsored','Promoted','Ad','Gesponsert','Sponsorisé','Patrocinado','Publicidad'];\n" +
             "  function hideAds(){\n" +
-            // Method 1: standard ad-marker attributes
+            // Method 1: standard ad-marker data attributes (most reliable when present)
             "    try{\n" +
             "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id],[aria-label=\"Sponsored\"]').forEach(function(el){\n" +
             "        (el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el)\n" +
@@ -230,22 +234,29 @@ public class FacebookWebViewClient extends WebViewClient {
             "        el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Method 3: TreeWalker finds any text node whose value is exactly
-            // "Sponsored" — walks up the DOM until it finds a card-sized element
-            // (offsetWidth > 100 && offsetHeight > 100) and hides it.
-            // This catches marketplace sponsored listings regardless of class names.
+            // Method 3: TreeWalker — find exact "Sponsored" / "Promoted" text nodes,
+            // then walk UP the DOM looking for the listing card. Stops at the first
+            // ancestor that is a <li>, has role=listitem/article, or is large enough
+            // to be a card (>120px wide). Works regardless of Facebook's class names.
             "    try{\n" +
             "      var tw=document.createTreeWalker(document.body||document.documentElement,4,{\n" +
             "        acceptNode:function(n){\n" +
             "          var v=n.nodeValue?n.nodeValue.trim():'';\n" +
-            "          return (v==='Sponsored'||v==='Gesponsert'||v==='Sponsorisé'||v==='Patrocinado')?1:3;\n" +
+            "          return SPONSORED_LABELS.indexOf(v)>=0?1:3;\n" +
             "        }\n" +
             "      });\n" +
-            "      var n;\n" +
-            "      while((n=tw.nextNode())){\n" +
-            "        var el=n.parentElement;\n" +
-            "        for(var i=0;i<12&&el;i++){\n" +
-            "          if(el.offsetWidth>100&&el.offsetHeight>80){\n" +
+            "      var node;\n" +
+            "      while((node=tw.nextNode())){\n" +
+            "        var el=node.parentElement;\n" +
+            "        for(var i=0;i<20&&el&&el!==document.body;i++){\n" +
+            "          var tag=el.tagName;\n" +
+            "          var role=el.getAttribute('role')||'';\n" +
+            "          if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'){\n" +
+            "            el.style.setProperty('display','none','important');\n" +
+            "            break;\n" +
+            "          }\n" +
+            // Fallback: card-sized container (marketplace listing cards ~170×260px)
+            "          if(el.offsetWidth>120&&el.offsetHeight>120){\n" +
             "            el.style.setProperty('display','none','important');\n" +
             "            break;\n" +
             "          }\n" +
@@ -255,8 +266,22 @@ public class FacebookWebViewClient extends WebViewClient {
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideAds();\n" +
-            "  setTimeout(hideAds,600); setTimeout(hideAds,2000); setTimeout(hideAds,5000);\n" +
-            // ── 7. (no click interceptor needed — desktop www.facebook.com/messages/ works directly) ──
+            "  setTimeout(hideAds,600); setTimeout(hideAds,2000); setTimeout(hideAds,5000); setTimeout(hideAds,10000);\n" +
+            // ── 7. Unread message badge ──────────────────────────────────────
+            // Only runs on the /messages page. Reads the count from document.title
+            // e.g. "(5) Messages | Facebook" → sends 5 to the app badge via FBLite.onBadge().
+            // A MutationObserver on <title> keeps the count live as messages arrive.
+            "  if(!window.__fbLiteBadge&&location.pathname.indexOf('/messages')>=0){\n" +
+            "    window.__fbLiteBadge=true;\n" +
+            "    function readBadge(){\n" +
+            "      var m=document.title.match(/\\((\\d+)\\)/);\n" +
+            "      try{ window.FBLite.onBadge(m?parseInt(m[1]):0); }catch(e){}\n" +
+            "    }\n" +
+            "    readBadge();\n" +
+            "    var titleEl=document.getElementsByTagName('title')[0];\n" +
+            "    if(titleEl) new MutationObserver(readBadge)\n" +
+            "      .observe(titleEl,{childList:true,characterData:true,subtree:true});\n" +
+            "  }\n" +
 
             // ── 8. Intercept SPA pushState/replaceState ──────────────────────
             "  if(!window.__fbLitePatched){\n" +

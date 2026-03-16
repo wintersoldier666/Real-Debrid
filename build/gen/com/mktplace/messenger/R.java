@@ -25,10 +25,11 @@ public final class R {
         public static final int status_bar=0x7f060008;
     }
     public static final class drawable {
-        public static final int ic_launcher_background=0x7f020000;
-        public static final int ic_launcher_foreground=0x7f020001;
-        public static final int ic_marketplace=0x7f020002;
-        public static final int ic_messages=0x7f020003;
+        public static final int badge_bg=0x7f020000;
+        public static final int ic_launcher_background=0x7f020001;
+        public static final int ic_launcher_foreground=0x7f020002;
+        public static final int ic_marketplace=0x7f020003;
+        public static final int ic_messages=0x7f020004;
     }
     public static final class id {
         public static final int blockedView=0x7f0a0008;
@@ -39,14 +40,15 @@ public final class R {
         public static final int errorView=0x7f0a0005;
         public static final int iconMarketplace=0x7f0a000c;
         public static final int iconMessages=0x7f0a000e;
-        public static final int nav_marketplace=0x7f0a0010;
-        public static final int nav_messages=0x7f0a0011;
+        public static final int msgBadge=0x7f0a000f;
+        public static final int nav_marketplace=0x7f0a0011;
+        public static final int nav_messages=0x7f0a0012;
         public static final int progressBar=0x7f0a0002;
         public static final int tabMarketplace=0x7f0a000b;
         public static final int tabMessages=0x7f0a000d;
         public static final int topBar=0x7f0a0000;
         public static final int tvErrorMessage=0x7f0a0006;
-        public static final int tvMessages=0x7f0a000f;
+        public static final int tvMessages=0x7f0a0010;
         public static final int tvTitle=0x7f0a0001;
         public static final int webView=0x7f0a0004;
     }

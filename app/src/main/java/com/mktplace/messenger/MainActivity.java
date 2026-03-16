@@ -48,14 +48,15 @@ public class MainActivity extends Activity {
     private TextView     labelMarketplace;
     private ImageView    iconMessages;
     private TextView     labelMessages;
+    private TextView     msgBadge;
 
     private int currentTab = TAB_MARKETPLACE;
 
     private FacebookWebViewClient fbClient;
 
-    // JS → Java bridge: called by the injected pushState/replaceState interceptor
-    // whenever Facebook's SPA navigates without a real page load.
+    // JS → Java bridge (exposed as window.FBLite in the page)
     private class NavBridge {
+        /** Called by the pushState/replaceState interceptor on every SPA navigation. */
         @JavascriptInterface
         public void onNav(final String url) {
             webView.post(new Runnable() {
@@ -65,6 +66,28 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /**
+         * Called by the injected JS with the unread message count parsed from the
+         * page title, e.g. "(5) Messages | Facebook" → count = 5.
+         * Only fired when the current page is the Messages page.
+         */
+        @JavascriptInterface
+        public void onBadge(final int count) {
+            webView.post(new Runnable() {
+                @Override public void run() { updateBadge(count); }
+            });
+        }
+    }
+
+    private void updateBadge(int count) {
+        if (msgBadge == null) return;
+        if (count > 0) {
+            msgBadge.setText(count > 99 ? "99+" : String.valueOf(count));
+            msgBadge.setVisibility(View.VISIBLE);
+        } else {
+            msgBadge.setVisibility(View.GONE);
         }
     }
 
@@ -85,6 +108,7 @@ public class MainActivity extends Activity {
         labelMarketplace = (TextView)     tabMarketplace.getChildAt(1);
         iconMessages     = (ImageView)    findViewById(R.id.iconMessages);
         labelMessages    = (TextView)     findViewById(R.id.tvMessages);
+        msgBadge         = (TextView)     findViewById(R.id.msgBadge);
 
         setupWebView();
         setupNavigation();

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Facebook Lite</string>
+    <string name="app_name">Marketplace Lite</string>
     <string name="nav_marketplace">Marketplace</string>
     <string name="nav_messages">Messages</string>
     <string name="error_no_internet">No internet connection. Please check your network and try again.</string>
