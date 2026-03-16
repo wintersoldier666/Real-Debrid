@@ -19,11 +19,10 @@ public class FacebookWebViewClient extends WebViewClient {
         "web.facebook.com", "l.facebook.com", "mbasic.facebook.com"
     };
 
-    // Sections to block. Everything else on facebook.com is allowed, including
-    // all login / auth redirect paths (/r.php, /home.php, /, etc.).
-    // Matching rule: path equals segment OR path starts with segment + "/"
-    // to avoid false matches (e.g. "/feed" must not block "/feedback").
-    private static final String[] BLOCKED_SECTIONS = {
+    // Sections to block on facebook.com.
+    // Matching: path == section OR path starts with section + "/"
+    // (avoids false matches like "/feed" hitting "/feedback")
+    public static final String[] BLOCKED_SECTIONS = {
         "/feed", "/video", "/watch", "/reels", "/reel",
         "/stories", "/story", "/events", "/groups", "/pages",
         "/gaming", "/jobs", "/news", "/ads", "/fundraisers",
@@ -41,17 +40,37 @@ public class FacebookWebViewClient extends WebViewClient {
     @SuppressWarnings("deprecation")
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
         if (url == null) return true;
-        // Silently drop app-scheme deep-links
-        if (url.startsWith("intent://") || url.startsWith("fb://")
-                || url.startsWith("market://") || url.startsWith("fbmessenger://")
+
+        // Messenger / app deep-links — redirect to mbasic messages instead of
+        // silently blocking (so "Message Seller" actually works)
+        if (url.startsWith("fb://") || url.startsWith("fbmessenger://")
                 || url.startsWith("fbrpc://")) {
+            view.loadUrl("https://mbasic.facebook.com/messages/");
             return true;
         }
+        if (url.startsWith("intent://") || url.startsWith("market://")) {
+            // Non-messenger app intents — drop silently
+            return true;
+        }
+
+        // Redirect www.facebook.com/messages/* → mbasic so threads load
+        // as plain HTML without "Download Messenger" interstitials
+        if (url.startsWith("https://www.facebook.com/messages/")) {
+            String rest = url.substring("https://www.facebook.com/messages/".length());
+            view.loadUrl("https://mbasic.facebook.com/messages/" + rest);
+            return true;
+        }
+        if (url.startsWith("http://www.facebook.com/messages/")) {
+            String rest = url.substring("http://www.facebook.com/messages/".length());
+            view.loadUrl("https://mbasic.facebook.com/messages/" + rest);
+            return true;
+        }
+
         if (isBlocked(url)) {
             callbacks.onBlockedUrl();
             return true;
         }
-        return false; // let WebView load it
+        return false;
     }
 
     @Override
@@ -77,38 +96,57 @@ public class FacebookWebViewClient extends WebViewClient {
     }
 
     /**
-     * Returns true only for URLs we explicitly want to block.
-     * Login flows, redirects through /, /r.php, /home.php, etc. are all allowed.
+     * Returns true if this URL should be blocked.
+     *
+     * Handles both absolute URLs (from shouldOverrideUrlLoading / real navigation)
+     * and relative paths (from the SPA pushState / replaceState bridge, which passes
+     * only the path component like "/watch" or "/feed").
      */
     public boolean isBlocked(String url) {
         if (url == null || url.isEmpty()) return false;
-        Uri uri;
-        try { uri = Uri.parse(url); } catch (Exception e) { return false; }
-        String host = uri.getHost();
-        String path = uri.getPath();
-        if (host == null) return false;
-        host = host.toLowerCase();
-        if (path == null) path = "/";
 
-        // CDN assets — always allow
-        if (host.endsWith("fbcdn.net") || host.endsWith("facebook.net")
-                || host.endsWith("fbsbx.com")) return false;
+        String path;
 
-        // Non-Facebook domain — block
-        boolean isFB = false;
-        for (String h : FACEBOOK_HOSTS) {
-            if (host.equals(h) || host.endsWith("." + h)) { isFB = true; break; }
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            Uri uri;
+            try { uri = Uri.parse(url); } catch (Exception e) { return false; }
+            String host = uri.getHost();
+            path = uri.getPath();
+            if (host == null) return false;
+            host = host.toLowerCase();
+
+            // CDN assets — always allow
+            if (host.endsWith("fbcdn.net") || host.endsWith("facebook.net")
+                    || host.endsWith("fbsbx.com")) return false;
+
+            // Non-Facebook domain — block
+            boolean isFB = false;
+            for (String h : FACEBOOK_HOSTS) {
+                if (host.equals(h) || host.endsWith("." + h)) { isFB = true; break; }
+            }
+            if (!isFB) return true;
+        } else {
+            // Relative URL from SPA pushState — no host, just a path like "/watch"
+            path = url.startsWith("/") ? url : "/" + url;
         }
-        if (!isFB) return true;
 
-        // Block only specific social-feed sections
+        if (path == null || path.isEmpty()) path = "/";
+
+        // Strip query string for section matching
         String pl = path.toLowerCase();
+        int q = pl.indexOf('?');
+        String seg = q >= 0 ? pl.substring(0, q) : pl;
+
+        // Block the home/feed root ("/") — SPA pushState to "/" = navigating to
+        // the newsfeed, not a login redirect (login redirects go through POST which
+        // doesn't trigger shouldOverrideUrlLoading, and we handle onPageFinished).
+        if (seg.equals("/") || seg.isEmpty()) return true;
+
+        // Block specific social-feed sections
         for (String section : BLOCKED_SECTIONS) {
-            if (pl.equals(section) || pl.startsWith(section + "/")) return true;
+            if (seg.equals(section) || seg.startsWith(section + "/")) return true;
         }
 
-        // Everything else on facebook.com is allowed (login, marketplace,
-        // messages, profile pages needed for marketplace listings, etc.)
         return false;
     }
 
@@ -116,32 +154,51 @@ public class FacebookWebViewClient extends WebViewClient {
         // language=JavaScript
         String js =
             "(function(){\n" +
-            // 1. Hide Facebook's own nav chrome so our bottom bar is the only nav
-            "  var HIDE_CSS = [\n" +
-            "    'div[role=\"banner\"]',\n" +
-            "    'div[data-pagelet=\"MWNavigation\"]',\n" +
-            "    'div[data-pagelet=\"LeftRail\"]',\n" +
-            "    'div[data-pagelet=\"Stories\"]',\n" +
-            "    'div[data-pagelet=\"MobileBottomBar\"]',\n" +
-            "    'div[data-pagelet=\"MobileTopBar\"]',\n" +
+            // ── 1. CSS hide (fast, before JS runs) ─────────────────────────
+            "  var H = [\n" +
+            "    '[data-pagelet=\"MobileBottomBar\"]',\n" +
+            "    '[data-pagelet=\"MobileTopBar\"]',\n" +
+            "    '[data-pagelet=\"MWNavigation\"]',\n" +
+            "    '[data-pagelet=\"LeftRail\"]',\n" +
             "    '[data-pagelet*=\"Reels\"]',\n" +
             "    '[data-pagelet*=\"NewsFeed\"]',\n" +
             "    '[data-pagelet*=\"FeedUnit\"]',\n" +
+            "    '[data-pagelet*=\"Stories\"]',\n" +
+            "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
             "    'nav'\n" +
-            "  ].join(',');\n" +
+            "  ];\n" +
             "  var style = document.createElement('style');\n" +
             "  style.id = 'fb-lite-hide';\n" +
-            "  style.textContent = HIDE_CSS + '{display:none!important}';\n" +
+            "  style.textContent = H.join(',') + '{display:none!important}';\n" +
             "  if (!document.getElementById('fb-lite-hide'))\n" +
             "    (document.head||document.documentElement).appendChild(style);\n" +
-            // 2. Remove install-app banners / popups
+            // ── 2. JS force-hide with setProperty (beats Facebook inline styles) ─
+            "  function hideNav() {\n" +
+            "    H.forEach(function(sel){\n" +
+            "      try{\n" +
+            "        document.querySelectorAll(sel).forEach(function(el){\n" +
+            "          el.style.setProperty('display','none','important');\n" +
+            "        });\n" +
+            "      }catch(e){}\n" +
+            "    });\n" +
+            // Also catch the main nav bar by content (handles pagelet name changes)
+            "    try{\n" +
+            "      document.querySelectorAll('[role=\"navigation\"],[role=\"banner\"]').forEach(function(el){\n" +
+            "        if(el.querySelector('[aria-label=\"Home\"],[aria-label=\"Watch\"],[aria-label=\"Groups\"],[aria-label=\"Menu\"]')){\n" +
+            "          el.style.setProperty('display','none','important');\n" +
+            "        }\n" +
+            "      });\n" +
+            "    }catch(e){}\n" +
+            "  }\n" +
+            "  hideNav();\n" +
+            "  setTimeout(hideNav,300); setTimeout(hideNav,1000); setTimeout(hideNav,3000);\n" +
+            // ── 3. Remove install-app popups / sponsored posts ───────────────
             "  function clean() {\n" +
             "    var sels = [\n" +
             "      '[aria-label*=\"Get the Facebook app\"]',\n" +
             "      '[aria-label*=\"Open in Messenger\"]',\n" +
             "      '[aria-label*=\"Continue in app\"]',\n" +
             "      '[aria-label*=\"Switch to app\"]',\n" +
-            "      '[aria-label*=\"Download\"]',\n" +
             "      '[data-testid*=\"download_app\"],[data-testid*=\"install_app\"],[data-testid*=\"upsell\"]',\n" +
             "      'a[href*=\"play.google.com/store/apps/details?id=com.facebook\"]',\n" +
             "      '[class*=\"interstitial\"]','.ms-interstitial'\n" +
@@ -149,22 +206,21 @@ public class FacebookWebViewClient extends WebViewClient {
             "    sels.forEach(function(sel){\n" +
             "      try{\n" +
             "        document.querySelectorAll(sel).forEach(function(el){\n" +
-            "          var root = el.closest('[role=\"dialog\"]')||\n" +
-            "                     el.closest('div[style*=\"position: fixed\"]')||el;\n" +
-            "          root.style.display='none';\n" +
+            "          var root=el.closest('[role=\"dialog\"]')||el.closest('div[style*=\"position: fixed\"]')||el;\n" +
+            "          root.style.setProperty('display','none','important');\n" +
             "        });\n" +
             "      }catch(e){}\n" +
             "    });\n" +
             "    try{\n" +
             "      document.querySelectorAll('div[style*=\"position: fixed\"],div[style*=\"position:fixed\"]').forEach(function(el){\n" +
             "        if(el.querySelector('a[href*=\"play.google.com\"]')||el.querySelector('a[href*=\"apps.apple.com\"]'))\n" +
-            "          el.style.display='none';\n" +
+            "          el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  clean();\n" +
-            "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,3000);\n" +
-            // 3. Intercept SPA pushState/replaceState so blocked sections are caught
+            "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
+            // ── 4. Intercept SPA navigation ──────────────────────────────────
             "  if(!window.__fbLitePatched){\n" +
             "    window.__fbLitePatched=true;\n" +
             "    function notifyAndroid(url){\n" +
@@ -175,11 +231,13 @@ public class FacebookWebViewClient extends WebViewClient {
             "    history.replaceState=function(s,t,u){ _replace.call(history,s,t,u); notifyAndroid(u||location.href); };\n" +
             "    window.addEventListener('popstate',function(){ notifyAndroid(location.href); });\n" +
             "  }\n" +
-            // 4. Re-clean on DOM mutations (Facebook inserts banners late)
+            // ── 5. MutationObserver re-applies hideNav + clean on DOM changes ─
             "  if(!window.__fbLiteObs){\n" +
             "    window.__fbLiteObs=true;\n" +
-            "    try{ new MutationObserver(function(){ clean(); })\n" +
-            "      .observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
+            "    try{\n" +
+            "      new MutationObserver(function(){ hideNav(); clean(); })\n" +
+            "        .observe(document.documentElement,{childList:true,subtree:true});\n" +
+            "    }catch(e){}\n" +
             "  }\n" +
             "})();\n";
 

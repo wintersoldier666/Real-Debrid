@@ -120,6 +120,19 @@ public class MainActivity extends Activity {
             }
             @Override public void onPageFinished() {
                 progressBar.setVisibility(View.GONE);
+                // Safety net: if we somehow landed on the Facebook homepage
+                // (e.g. via a POST-login redirect that bypassed shouldOverrideUrlLoading),
+                // redirect to the current tab immediately.
+                String url = webView.getUrl();
+                if (url != null && !url.isEmpty()) {
+                    try {
+                        android.net.Uri u = android.net.Uri.parse(url);
+                        String path = u.getPath();
+                        if (path == null || path.equals("/") || path.isEmpty()) {
+                            redirectToCurrentTab();
+                        }
+                    } catch (Exception ignored) {}
+                }
             }
             @Override public void onPageError()  { showError(); }
             @Override public void onBlockedUrl() { redirectToCurrentTab(); }
