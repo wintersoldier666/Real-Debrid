@@ -19,15 +19,17 @@ public class FacebookWebViewClient extends WebViewClient {
         "web.facebook.com", "l.facebook.com", "mbasic.facebook.com"
     };
 
-    // Sections to block on facebook.com.
-    // Matching: path == section OR path starts with section + "/"
-    // (avoids false matches like "/feed" hitting "/feedback")
-    public static final String[] BLOCKED_SECTIONS = {
-        "/feed", "/video", "/watch", "/reels", "/reel",
-        "/stories", "/story", "/events", "/groups", "/pages",
-        "/gaming", "/jobs", "/news", "/ads", "/fundraisers",
-        "/friends", "/notifications", "/hashtag", "/photos",
-        "/live", "/memories", "/saved"
+    // Allowlist: ONLY these path prefixes are permitted on facebook.com.
+    // Everything else (feed, watch, profile pages, groups, etc.) is blocked
+    // and redirected back to the current tab.
+    private static final String[] ALLOWED_PATH_PREFIXES = {
+        "/marketplace",
+        "/messages",
+        "/login",
+        "/checkpoint",
+        "/two_step_verification",
+        "/recover",
+        "/ajax"
     };
 
     private final Callbacks callbacks;
@@ -81,9 +83,12 @@ public class FacebookWebViewClient extends WebViewClient {
     /**
      * Returns true if this URL should be blocked.
      *
-     * Handles both absolute URLs (from shouldOverrideUrlLoading / real navigation)
-     * and relative paths (from the SPA pushState / replaceState bridge, which passes
-     * only the path component like "/watch" or "/feed").
+     * Uses an allowlist: only /marketplace, /messages, and auth-related paths
+     * are permitted. Everything else — feed, watch, profile pages, groups, etc. —
+     * is blocked and redirected back to the current tab.
+     *
+     * Handles both absolute URLs (shouldOverrideUrlLoading) and relative paths
+     * (SPA pushState/replaceState bridge passing e.g. "/watch" or "/feed").
      */
     public boolean isBlocked(String url) {
         if (url == null || url.isEmpty()) return false;
@@ -98,7 +103,7 @@ public class FacebookWebViewClient extends WebViewClient {
             if (host == null) return false;
             host = host.toLowerCase();
 
-            // CDN assets — always allow
+            // CDN / API assets — always allow
             if (host.endsWith("fbcdn.net") || host.endsWith("facebook.net")
                     || host.endsWith("fbsbx.com")) return false;
 
@@ -115,22 +120,17 @@ public class FacebookWebViewClient extends WebViewClient {
 
         if (path == null || path.isEmpty()) path = "/";
 
-        // Strip query string for section matching
+        // Normalise: strip query string, lowercase
         String pl = path.toLowerCase();
         int q = pl.indexOf('?');
         String seg = q >= 0 ? pl.substring(0, q) : pl;
+        if (seg.isEmpty()) seg = "/";
 
-        // Block the home/feed root ("/") — SPA pushState to "/" = navigating to
-        // the newsfeed, not a login redirect (login redirects go through POST which
-        // doesn't trigger shouldOverrideUrlLoading, and we handle onPageFinished).
-        if (seg.equals("/") || seg.isEmpty()) return true;
-
-        // Block specific social-feed sections
-        for (String section : BLOCKED_SECTIONS) {
-            if (seg.equals(section) || seg.startsWith(section + "/")) return true;
+        // Allow only the listed prefixes — everything else is blocked
+        for (String allowed : ALLOWED_PATH_PREFIXES) {
+            if (seg.equals(allowed) || seg.startsWith(allowed + "/")) return false;
         }
-
-        return false;
+        return true;
     }
 
     private void injectCleanup(WebView view) {
@@ -220,53 +220,78 @@ public class FacebookWebViewClient extends WebViewClient {
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
             // ── 5. Ad blocking ──────────────────────────────────────────────
             "  var SPONSORED_LABELS=['Sponsored','Promoted','Ad','Gesponsert','Sponsorisé','Patrocinado','Publicidad'];\n" +
+            // Helper: given an element that contains the sponsored label, walk up to
+            // find the card container and hide it.
+            "  function hideCard(el){\n" +
+            "    for(var i=0;i<25&&el&&el!==document.body;i++){\n" +
+            "      var tag=el.tagName;\n" +
+            "      var role=(el.getAttribute&&el.getAttribute('role'))||'';\n" +
+            "      if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'||role==='feed'){\n" +
+            "        el.style.setProperty('display','none','important'); return;\n" +
+            "      }\n" +
+            "      if(el.offsetWidth>120&&el.offsetHeight>120){\n" +
+            "        el.style.setProperty('display','none','important'); return;\n" +
+            "      }\n" +
+            "      el=el.parentElement;\n" +
+            "    }\n" +
+            "  }\n" +
             "  function hideAds(){\n" +
-            // Method 1: standard ad-marker data attributes (most reliable when present)
+            // Method 1: standard ad-marker data attributes
             "    try{\n" +
-            "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id],[aria-label=\"Sponsored\"]').forEach(function(el){\n" +
-            "        (el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el)\n" +
-            "          .style.setProperty('display','none','important');\n" +
+            "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id]').forEach(function(el){\n" +
+            "        hideCard(el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el);\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Method 2: desktop right-rail ad column
+            // Method 2: aria-label containing "Sponsored" (covers attribute-level labelling)
+            "    try{\n" +
+            "      document.querySelectorAll('[aria-label*=\"Sponsored\"],[aria-label*=\"Promoted\"],[aria-label*=\"sponsored\"]').forEach(function(el){\n" +
+            "        hideCard(el.closest('[role=\"article\"]')||el.closest('li')||el);\n" +
+            "      });\n" +
+            "    }catch(e){}\n" +
+            // Method 3: desktop right-rail ad column
             "    try{\n" +
             "      document.querySelectorAll('[data-pagelet=\"RightRail\"],[data-pagelet*=\"AdUnit\"]').forEach(function(el){\n" +
             "        el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Method 3: TreeWalker — find exact "Sponsored" / "Promoted" text nodes,
-            // then walk UP the DOM looking for the listing card. Stops at the first
-            // ancestor that is a <li>, has role=listitem/article, or is large enough
-            // to be a card (>120px wide). Works regardless of Facebook's class names.
+            // Method 4: TreeWalker — find text nodes whose trimmed value CONTAINS a
+            // sponsored label (substring match handles zero-width spaces & hidden chars
+            // that Facebook sometimes inserts to defeat exact-match blocking).
             "    try{\n" +
             "      var tw=document.createTreeWalker(document.body||document.documentElement,4,{\n" +
             "        acceptNode:function(n){\n" +
-            "          var v=n.nodeValue?n.nodeValue.trim():'';\n" +
-            "          return SPONSORED_LABELS.indexOf(v)>=0?1:3;\n" +
+            "          var v=(n.nodeValue||'').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').trim();\n" +
+            "          return SPONSORED_LABELS.some(function(l){return v===l;})?1:3;\n" +
             "        }\n" +
             "      });\n" +
             "      var node;\n" +
             "      while((node=tw.nextNode())){\n" +
-            "        var el=node.parentElement;\n" +
-            "        for(var i=0;i<20&&el&&el!==document.body;i++){\n" +
-            "          var tag=el.tagName;\n" +
-            "          var role=el.getAttribute('role')||'';\n" +
-            "          if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'){\n" +
-            "            el.style.setProperty('display','none','important');\n" +
-            "            break;\n" +
-            "          }\n" +
-            // Fallback: card-sized container (marketplace listing cards ~170×260px)
-            "          if(el.offsetWidth>120&&el.offsetHeight>120){\n" +
-            "            el.style.setProperty('display','none','important');\n" +
-            "            break;\n" +
-            "          }\n" +
-            "          el=el.parentElement;\n" +
-            "        }\n" +
+            "        hideCard(node.parentElement);\n" +
             "      }\n" +
+            "    }catch(e){}\n" +
+            // Method 5: scan leaf <span> and <a> elements for exact sponsored text.
+            // Catches cases where the text is split across nested spans that the
+            // TreeWalker handles individually as non-matching partial nodes.
+            "    try{\n" +
+            "      document.querySelectorAll('span,a').forEach(function(el){\n" +
+            "        if(el.children.length>0) return;\n" +
+            "        var v=(el.textContent||'').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').trim();\n" +
+            "        if(SPONSORED_LABELS.some(function(l){return v===l;})) hideCard(el);\n" +
+            "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideAds();\n" +
-            "  setTimeout(hideAds,600); setTimeout(hideAds,2000); setTimeout(hideAds,5000); setTimeout(hideAds,10000);\n" +
+            "  setTimeout(hideAds,400); setTimeout(hideAds,1200); setTimeout(hideAds,3000); setTimeout(hideAds,8000);\n" +
+            // Scroll listener: when user scrolls, Facebook renders newly visible items.
+            // Debounce hideAds() 300ms after scroll stops so layout is complete.
+            "  if(!window.__fbLiteScroll){\n" +
+            "    window.__fbLiteScroll=true;\n" +
+            "    var _scrollT=null;\n" +
+            "    window.addEventListener('scroll',function(){\n" +
+            "      clearTimeout(_scrollT);\n" +
+            "      _scrollT=setTimeout(function(){ hideAds(); setTimeout(hideAds,400); },300);\n" +
+            "    },{passive:true,capture:true});\n" +
+            "  }\n" +
             // ── 7. Unread message badge ──────────────────────────────────────
             // Only runs on the /messages page. Reads the count from document.title
             // e.g. "(5) Messages | Facebook" → sends 5 to the app badge via FBLite.onBadge().
@@ -306,7 +331,9 @@ public class FacebookWebViewClient extends WebViewClient {
             "    try{ new MutationObserver(function(){\n" +
             "      hideNav(); clean();\n" +
             "      clearTimeout(_adsTimer);\n" +
-            "      _adsTimer=setTimeout(hideAds,150);\n" +
+            // Run hideAds at 150ms (first pass) then again at 550ms (second pass after
+            // React finishes painting card images and dimensions become non-zero).
+            "      _adsTimer=setTimeout(function(){ hideAds(); setTimeout(hideAds,400); },150);\n" +
             "    }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
             "  }\n" +
             "})();\n";
