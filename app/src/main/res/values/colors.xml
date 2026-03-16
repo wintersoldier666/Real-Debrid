@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="facebook_blue">#1877F2</color>
+    <color name="facebook_blue_dark">#0D65D9</color>
+    <color name="facebook_white">#FFFFFF</color>
+    <color name="facebook_light_gray">#F0F2F5</color>
+    <color name="facebook_gray">#65676B</color>
+    <color name="facebook_dark">#1C1E21</color>
+    <color name="nav_selected">#1877F2</color>
+    <color name="nav_unselected">#65676B</color>
+    <color name="status_bar">#1877F2</color>
+    <color name="error_bg">#FFF3F3</color>
+    <color name="error_text">#D32F2F</color>
+</resources>

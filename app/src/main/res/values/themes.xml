@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FacebookLite" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/facebook_blue</item>
+        <item name="colorPrimaryVariant">@color/facebook_blue_dark</item>
+        <item name="colorOnPrimary">@color/facebook_white</item>
+        <item name="colorSecondary">@color/facebook_blue</item>
+        <item name="colorOnSecondary">@color/facebook_white</item>
+        <item name="android:statusBarColor">@color/facebook_blue</item>
+        <item name="android:windowBackground">@color/facebook_white</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Facebook Lite</string>
+    <string name="nav_marketplace">Marketplace</string>
+    <string name="nav_messages">Messages</string>
+    <string name="error_no_internet">No internet connection. Please check your network and try again.</string>
+    <string name="error_page_blocked">This page is not available in Facebook Lite.</string>
+    <string name="retry">Retry</string>
+    <string name="loading">Loading…</string>
+</resources>
