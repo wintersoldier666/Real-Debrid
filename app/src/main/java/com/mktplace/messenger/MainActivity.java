@@ -21,7 +21,8 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    private static final String URL_MESSAGES    = "https://www.facebook.com/messages/";
+    // Use messenger.com directly — facebook.com/messages just shows "install Messenger" prompt
+    private static final String URL_MESSAGES    = "https://www.messenger.com/";
 
     private static final int TAB_MARKETPLACE = 0;
     private static final int TAB_MESSAGES    = 1;
@@ -77,10 +78,12 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
+        // Chrome mobile UA — recognized by Facebook/Messenger as a real browser,
+        // which suppresses the "install the app" interstitials
         s.setUserAgentString(
-            "Mozilla/5.0 (Linux; Android 14; SM-S918B) " +
+            "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/120.0.0.0 Mobile Safari/537.36");
+            "Chrome/120.0.6099.210 Mobile Safari/537.36");
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -146,7 +149,9 @@ public class MainActivity extends Activity {
         tvTitle.setText(tab == TAB_MARKETPLACE ? "Marketplace" : "Messages");
 
         String current = webView.getUrl();
-        if (current == null || !current.startsWith(url.substring(0, url.length() - 1))) {
+        // For Messages always reload messenger.com if we're not already there
+        boolean alreadyThere = current != null && current.startsWith(url.substring(0, url.length() - 1));
+        if (!alreadyThere) {
             webView.loadUrl(url);
         }
         updateNavColors(tab);
