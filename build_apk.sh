@@ -6,7 +6,6 @@ ANDROID_JAR="/usr/lib/android-sdk/platforms/android-23/android.jar"
 BUILD_TOOLS="/usr/lib/android-sdk/build-tools/29.0.3"
 AAPT="$BUILD_TOOLS/aapt"
 DX="/usr/lib/android-sdk/build-tools/debian/dx"
-APKSIGNER="$BUILD_TOOLS/apksigner"
 
 PROJECT="/home/user/Real-Debrid"
 SRC="$PROJECT/app/src/main"
@@ -17,12 +16,6 @@ DEX="$BUILD/dex"
 APK_UNSIGNED="$BUILD/app-unsigned.apk"
 APK_ALIGNED="$BUILD/app-aligned.apk"
 APK_SIGNED="$BUILD/facebook-lite.apk"
-
-KOTLIN_STDLIB=$(find /usr/share/kotlin -name "kotlin-stdlib*.jar" 2>/dev/null | head -1)
-if [ -z "$KOTLIN_STDLIB" ]; then
-  KOTLIN_STDLIB=$(find /usr -name "kotlin-stdlib.jar" 2>/dev/null | head -1)
-fi
-echo "Kotlin stdlib: $KOTLIN_STDLIB"
 
 # ---- Clean ----
 rm -rf "$BUILD"
@@ -35,16 +28,17 @@ echo "=== Step 1: Package resources with aapt ==="
   -M "$SRC/AndroidManifest.xml" \
   -I "$ANDROID_JAR"
 
-echo "=== Step 2: Compile Kotlin sources ==="
-KT_FILES=$(find "$SRC/java/com/mktplace" -name "*.kt")
+echo "=== Step 2: Compile Java sources ==="
+JAVA_FILES=$(find "$SRC/java" -name "*.java")
 R_JAVA=$(find "$GEN" -name "R.java")
-kotlinc $KT_FILES $R_JAVA \
-  -classpath "$ANDROID_JAR:$KOTLIN_STDLIB" \
+javac -source 1.8 -target 1.8 \
+  -classpath "$ANDROID_JAR" \
+  -bootclasspath "$ANDROID_JAR" \
   -d "$OBJ" \
-  -jvm-target 1.6
+  $JAVA_FILES $R_JAVA
 
 echo "=== Step 3: Convert to Dalvik (dx) ==="
-"$DX" --dex --output="$DEX/classes.dex" "$OBJ" "$KOTLIN_STDLIB"
+"$DX" --dex --output="$DEX/classes.dex" "$OBJ"
 
 echo "=== Step 4: Build unsigned APK ==="
 "$AAPT" package -f \
@@ -53,7 +47,6 @@ echo "=== Step 4: Build unsigned APK ==="
   -I "$ANDROID_JAR" \
   -F "$APK_UNSIGNED"
 
-# Add dex file
 cd "$DEX"
 "$AAPT" add "$APK_UNSIGNED" classes.dex
 cd "$PROJECT"
@@ -61,17 +54,17 @@ cd "$PROJECT"
 echo "=== Step 5: Zipalign ==="
 "$BUILD_TOOLS/zipalign" -f 4 "$APK_UNSIGNED" "$APK_ALIGNED"
 
-echo "=== Step 6: Generate debug keystore ==="
-KEYSTORE="$BUILD/debug.keystore"
+echo "=== Step 6: Generate keystore ==="
+KEYSTORE="$PROJECT/debug.keystore"
 if [ ! -f "$KEYSTORE" ]; then
-  keytool -genkeypair -v \
+  keytool -genkeypair \
     -keystore "$KEYSTORE" \
     -alias androidkey \
     -keyalg RSA -keysize 2048 \
     -validity 10000 \
     -storepass android \
     -keypass android \
-    -dname "CN=Facebook Lite, OU=Dev, O=Dev, L=City, S=State, C=US" 2>/dev/null
+    -dname "CN=Dev, OU=Dev, O=Dev, L=City, S=State, C=US" 2>/dev/null
 fi
 
 echo "=== Step 7: Sign APK ==="
