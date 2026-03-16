@@ -164,13 +164,13 @@
             android:clickable="true"
             android:focusable="true">
 
-            <TextView
+            <ImageView
                 android:id="@+id/iconMarketplace"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="&#xF291;"
-                android:textSize="22sp"
-                android:textColor="@color/nav_selected" />
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_marketplace"
+                android:tint="@color/nav_selected"
+                android:contentDescription="Marketplace" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -193,13 +193,13 @@
             android:clickable="true"
             android:focusable="true">
 
-            <TextView
+            <ImageView
                 android:id="@+id/iconMessages"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="&#xF0E0;"
-                android:textSize="22sp"
-                android:textColor="@color/nav_unselected" />
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_messages"
+                android:tint="@color/nav_unselected"
+                android:contentDescription="Messages" />
 
             <TextView
                 android:id="@+id/tvMessages"

@@ -24,8 +24,15 @@ public class FacebookWebViewClient extends WebViewClient {
     private static final String[] ALLOWED_FB_PREFIXES = {
         "/marketplace",              // browse listings
         "/messages",                 // mbasic messages
-        "/login", "/checkpoint",
-        "/recover", "/two_step_verification", "/rsrc.php"
+        "/login",                    // login page (both /login and /login.php)
+        "/checkpoint",               // 2-factor / account checkpoint
+        "/recover",
+        "/two_step_verification",
+        "/rsrc.php",
+        "/ajax/",                    // Facebook's internal AJAX calls (needed post-login)
+        "/api/",                     // GraphQL / internal API
+        "/dialog/",                  // OAuth dialogs
+        "/noscript"                  // fallback page during login redirects
     };
 
     public static final String[] BLOCKED_FRAGMENTS = {
@@ -55,6 +62,14 @@ public class FacebookWebViewClient extends WebViewClient {
                 || url.startsWith("fbrpc://")) {
             return true;
         }
+        // Allow bare "/" through — this is a transient redirect during login
+        // and SPA navigation. The poll-based enforcer handles redirecting away
+        // from the homepage once the page fully loads.
+        try {
+            android.net.Uri u = android.net.Uri.parse(url);
+            String p = u.getPath();
+            if (p == null || p.equals("/") || p.isEmpty()) return false;
+        } catch (Exception ignored) {}
         return isBlocked(url);
     }
 
@@ -108,15 +123,19 @@ public class FacebookWebViewClient extends WebViewClient {
         for (String frag : BLOCKED_FRAGMENTS) {
             if (pl.startsWith(frag)) return true;
         }
-        // Block bare homepage
-        if (pl.equals("/")) return true;
 
         // Allow whitelisted prefixes
         for (String prefix : ALLOWED_FB_PREFIXES) {
             if (pl.startsWith(prefix)) return false;
         }
 
-        return true; // block anything else on facebook.com
+        // Block bare homepage and anything else not explicitly allowed.
+        // NOTE: "/" is intentionally caught here (not as a special case) so that
+        // the login post-redirect chain — which momentarily passes through / —
+        // is handled by the isPageLoading guard in MainActivity rather than
+        // being blocked by shouldOverrideUrlLoading. The poll-based enforcement
+        // will redirect away from / once the page fully loads.
+        return true;
     }
 
     private void injectCleanup(WebView view) {

@@ -14,6 +14,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -44,12 +45,15 @@ public class MainActivity extends Activity {
     private LinearLayout blockedView;
     private LinearLayout tabMarketplace;
     private LinearLayout tabMessages;
-    private TextView     iconMarketplace;
+    private ImageView    iconMarketplace;
     private TextView     labelMarketplace;
-    private TextView     iconMessages;
+    private ImageView    iconMessages;
     private TextView     labelMessages;
 
-    private int currentTab = TAB_MARKETPLACE;
+    private int     currentTab    = TAB_MARKETPLACE;
+    // True while a page is actively loading; enforcement is skipped to avoid
+    // interrupting Facebook's internal redirect chains (login, SPA navigation)
+    private boolean isPageLoading = false;
 
     private FacebookWebViewClient fbClient;
 
@@ -90,9 +94,9 @@ public class MainActivity extends Activity {
         blockedView      = (LinearLayout) findViewById(R.id.blockedView);
         tabMarketplace   = (LinearLayout) findViewById(R.id.tabMarketplace);
         tabMessages      = (LinearLayout) findViewById(R.id.tabMessages);
-        iconMarketplace  = (TextView)     findViewById(R.id.iconMarketplace);
+        iconMarketplace  = (ImageView)    findViewById(R.id.iconMarketplace);
         labelMarketplace = (TextView)     tabMarketplace.getChildAt(1);
-        iconMessages     = (TextView)     findViewById(R.id.iconMessages);
+        iconMessages     = (ImageView)    findViewById(R.id.iconMessages);
         labelMessages    = (TextView)     findViewById(R.id.tvMessages);
 
         setupWebView();
@@ -128,18 +132,18 @@ public class MainActivity extends Activity {
 
         fbClient = new FacebookWebViewClient(new FacebookWebViewClient.Callbacks() {
             @Override public void onPageStarted(String url) {
+                isPageLoading = true;
                 progressBar.setVisibility(View.VISIBLE);
                 hideAllOverlays();
-                // Also check URL on real page starts
-                if (fbClient != null && fbClient.isBlocked(url)) {
-                    redirectToCurrentTab();
-                }
+                // Do NOT redirect here — Facebook makes many internal redirects
+                // during login and SPA navigation; intercepting here breaks auth.
             }
             @Override public void onPageFinished() {
+                isPageLoading = false;
                 progressBar.setVisibility(View.GONE);
             }
-            @Override public void onPageError()   { showError(); }
-            @Override public void onBlockedUrl()  { /* handled by isBlocked checks */ }
+            @Override public void onPageError()   { isPageLoading = false; showError(); }
+            @Override public void onBlockedUrl()  { /* handled by shouldOverrideUrlLoading */ }
         });
 
         webView.setWebViewClient(fbClient);
@@ -151,8 +155,10 @@ public class MainActivity extends Activity {
         }));
     }
 
-    /** Periodically called; redirects back if user navigated somewhere blocked */
+    /** Periodically called; redirects back if user navigated somewhere blocked.
+     *  Skipped while a page is loading to avoid interrupting redirect chains. */
     private void enforceCurrentTab() {
+        if (isPageLoading) return;
         String url = webView.getUrl();
         if (url == null || url.isEmpty()) return;
         if (fbClient != null && fbClient.isBlocked(url)) {
@@ -204,9 +210,9 @@ public class MainActivity extends Activity {
     private void updateNavColors(int active) {
         int blue = getResources().getColor(R.color.nav_selected);
         int gray = getResources().getColor(R.color.nav_unselected);
-        iconMarketplace.setTextColor(active == TAB_MARKETPLACE ? blue : gray);
+        iconMarketplace.setColorFilter(active == TAB_MARKETPLACE ? blue : gray);
         labelMarketplace.setTextColor(active == TAB_MARKETPLACE ? blue : gray);
-        iconMessages.setTextColor(active == TAB_MESSAGES ? blue : gray);
+        iconMessages.setColorFilter(active == TAB_MESSAGES ? blue : gray);
         labelMessages.setTextColor(active == TAB_MESSAGES ? blue : gray);
     }
 
