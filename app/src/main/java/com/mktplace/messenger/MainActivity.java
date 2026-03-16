@@ -1,13 +1,16 @@
 package com.mktplace.messenger;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Button;
@@ -21,7 +24,7 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    // Use messenger.com directly — facebook.com/messages just shows "install Messenger" prompt
+    // messenger.com = web Messenger, avoids the "install Messenger" prompt
     private static final String URL_MESSAGES    = "https://www.messenger.com/";
 
     private static final int TAB_MARKETPLACE = 0;
@@ -41,6 +44,33 @@ public class MainActivity extends Activity {
 
     private int currentTab = TAB_MARKETPLACE;
 
+    private FacebookWebViewClient fbClient;
+
+    // Polls the WebView URL every 600 ms to catch SPA navigation that
+    // bypasses shouldOverrideUrlLoading (e.g. Facebook's history.pushState)
+    private final Handler   pollHandler = new Handler();
+    private final Runnable  pollRunnable = new Runnable() {
+        @Override public void run() {
+            enforceCurrentTab();
+            pollHandler.postDelayed(this, 600);
+        }
+    };
+
+    // JavaScript → Java bridge so pushState interception can ping us
+    private class NavBridge {
+        @JavascriptInterface
+        public void onNav(final String url) {
+            webView.post(new Runnable() {
+                @Override public void run() {
+                    if (fbClient != null && fbClient.isBlocked(url)) {
+                        redirectToCurrentTab();
+                    }
+                }
+            });
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -65,8 +95,11 @@ public class MainActivity extends Activity {
         if (savedInstanceState == null) {
             loadTab(TAB_MARKETPLACE);
         }
+
+        pollHandler.postDelayed(pollRunnable, 600);
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -78,8 +111,7 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
-        // Chrome mobile UA — recognized by Facebook/Messenger as a real browser,
-        // which suppresses the "install the app" interstitials
+        // Full Chrome UA — no "wv" tag so Facebook doesn't trigger "open in app"
         s.setUserAgentString(
             "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -88,54 +120,66 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        webView.setWebViewClient(new FacebookWebViewClient(new FacebookWebViewClient.Callbacks() {
-            @Override public void onPageStarted() {
+        // JS bridge: Facebook's pushState interceptor calls FBLite.onNav(url)
+        webView.addJavascriptInterface(new NavBridge(), "FBLite");
+
+        fbClient = new FacebookWebViewClient(new FacebookWebViewClient.Callbacks() {
+            @Override public void onPageStarted(String url) {
                 progressBar.setVisibility(View.VISIBLE);
                 hideAllOverlays();
+                // Also check URL on real page starts
+                if (fbClient != null && fbClient.isBlocked(url)) {
+                    redirectToCurrentTab();
+                }
             }
             @Override public void onPageFinished() {
                 progressBar.setVisibility(View.GONE);
             }
-            @Override public void onPageError() {
-                showError();
-            }
-            @Override public void onBlockedUrl() {
-                showBlockedScreen();
-            }
-        }));
+            @Override public void onPageError()   { showError(); }
+            @Override public void onBlockedUrl()  { /* handled by isBlocked checks */ }
+        });
 
+        webView.setWebViewClient(fbClient);
         webView.setWebChromeClient(new FacebookWebChromeClient(new FacebookWebChromeClient.ProgressListener() {
-            @Override public void onProgress(int progress) {
-                progressBar.setProgress(progress);
-                if (progress >= 100) progressBar.setVisibility(View.GONE);
+            @Override public void onProgress(int p) {
+                progressBar.setProgress(p);
+                if (p >= 100) progressBar.setVisibility(View.GONE);
             }
         }));
+    }
+
+    /** Periodically called; redirects back if user navigated somewhere blocked */
+    private void enforceCurrentTab() {
+        String url = webView.getUrl();
+        if (url == null || url.isEmpty()) return;
+        if (fbClient != null && fbClient.isBlocked(url)) {
+            redirectToCurrentTab();
+        }
+    }
+
+    private void redirectToCurrentTab() {
+        hideAllOverlays();
+        webView.stopLoading();
+        webView.loadUrl(currentTab == TAB_MARKETPLACE ? URL_MARKETPLACE : URL_MESSAGES);
     }
 
     private void setupNavigation() {
         tabMarketplace.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (currentTab != TAB_MARKETPLACE) loadTab(TAB_MARKETPLACE);
-            }
+            @Override public void onClick(View v) { loadTab(TAB_MARKETPLACE); }
         });
         tabMessages.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (currentTab != TAB_MESSAGES) loadTab(TAB_MESSAGES);
-            }
+            @Override public void onClick(View v) { loadTab(TAB_MESSAGES); }
         });
     }
 
     private void setupButtons() {
-        Button btnRetry = (Button) findViewById(R.id.btnRetry);
-        btnRetry.setOnClickListener(new View.OnClickListener() {
+        ((Button) findViewById(R.id.btnRetry)).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (isNetworkAvailable()) { hideAllOverlays(); webView.reload(); }
                 else showError();
             }
         });
-
-        Button btnGo = (Button) findViewById(R.id.btnGoMarketplace);
-        btnGo.setOnClickListener(new View.OnClickListener() {
+        ((Button) findViewById(R.id.btnGoMarketplace)).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { loadTab(TAB_MARKETPLACE); }
         });
     }
@@ -147,13 +191,7 @@ public class MainActivity extends Activity {
 
         String url = (tab == TAB_MARKETPLACE) ? URL_MARKETPLACE : URL_MESSAGES;
         tvTitle.setText(tab == TAB_MARKETPLACE ? "Marketplace" : "Messages");
-
-        String current = webView.getUrl();
-        // For Messages always reload messenger.com if we're not already there
-        boolean alreadyThere = current != null && current.startsWith(url.substring(0, url.length() - 1));
-        if (!alreadyThere) {
-            webView.loadUrl(url);
-        }
+        webView.loadUrl(url);
         updateNavColors(tab);
     }
 
@@ -161,7 +199,6 @@ public class MainActivity extends Activity {
     private void updateNavColors(int active) {
         int blue = getResources().getColor(R.color.nav_selected);
         int gray = getResources().getColor(R.color.nav_unselected);
-
         iconMarketplace.setTextColor(active == TAB_MARKETPLACE ? blue : gray);
         labelMarketplace.setTextColor(active == TAB_MARKETPLACE ? blue : gray);
         iconMessages.setTextColor(active == TAB_MESSAGES ? blue : gray);
@@ -172,13 +209,6 @@ public class MainActivity extends Activity {
         webView.setVisibility(View.GONE);
         errorView.setVisibility(View.VISIBLE);
         blockedView.setVisibility(View.GONE);
-        progressBar.setVisibility(View.GONE);
-    }
-
-    private void showBlockedScreen() {
-        webView.setVisibility(View.GONE);
-        blockedView.setVisibility(View.VISIBLE);
-        errorView.setVisibility(View.GONE);
         progressBar.setVisibility(View.GONE);
     }
 
@@ -197,29 +227,31 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-            webView.goBack();
-            return true;
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (webView.canGoBack()) {
+                webView.goBack();
+                return true;
+            }
         }
         return super.onKeyDown(keyCode, event);
     }
 
     @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        webView.saveState(outState);
-        outState.putInt("tab", currentTab);
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        webView.saveState(out);
+        out.putInt("tab", currentTab);
     }
 
     @Override
-    protected void onRestoreInstanceState(Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        webView.restoreState(savedInstanceState);
-        currentTab = savedInstanceState.getInt("tab", TAB_MARKETPLACE);
+    protected void onRestoreInstanceState(Bundle in) {
+        super.onRestoreInstanceState(in);
+        webView.restoreState(in);
+        currentTab = in.getInt("tab", TAB_MARKETPLACE);
         updateNavColors(currentTab);
     }
 
-    @Override protected void onPause()   { super.onPause();   webView.onPause();  }
-    @Override protected void onResume()  { super.onResume();  webView.onResume(); }
-    @Override protected void onDestroy() { webView.destroy(); super.onDestroy();  }
+    @Override protected void onPause()   { super.onPause();   webView.onPause();  pollHandler.removeCallbacks(pollRunnable); }
+    @Override protected void onResume()  { super.onResume();  webView.onResume(); pollHandler.postDelayed(pollRunnable, 600); }
+    @Override protected void onDestroy() { pollHandler.removeCallbacks(pollRunnable); webView.destroy(); super.onDestroy(); }
 }
