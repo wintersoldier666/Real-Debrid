@@ -261,29 +261,20 @@ public class FacebookWebViewClient extends WebViewClient {
             "  clean();\n" +
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
             // ── 5. Ad blocking ──────────────────────────────────────────────
-            "  var SPONSORED_LABELS=['Sponsored','Promoted','Ad','Gesponsert','Sponsorisé','Patrocinado','Publicidad'];\n" +
-            // Helper: given an element that contains the sponsored label, walk up to
-            // find the card container and hide it.
-            //
-            // Facebook Marketplace ad card structure:
-            //   div.card_container   ← we want to hide THIS
-            //     a.card_link        ← same dimensions — SKIP for dimension check
-            //       div.image
-            //       div.info
-            //         span "Sponsored"  ← we start here
-            //
-            // Rule: semantic roles (li/article/listitem/gridcell) take priority.
-            // Dimension fallback ONLY fires on block-level elements (DIV/SECTION),
-            // never on inline elements (A/SPAN/IMG/etc.) so we don't stop at the
-            // <a> wrapper and instead reach the outer card div.
+            // Recognised sponsored labels (English + common locales).
+            // "Ad" intentionally omitted — too short, matches unrelated text.
+            "  var SPONSORED_LABELS=['Sponsored','Promoted','Gesponsert','Sponsorisé','Patrocinado','Publicidad'];\n" +
             "  function hideCard(el){\n" +
+            "    if(!el||el===document.body) return;\n" +
             "    for(var i=0;i<25&&el&&el!==document.body;i++){\n" +
             "      var tag=el.tagName;\n" +
             "      var role=(el.getAttribute&&el.getAttribute('role'))||'';\n" +
             "      if(tag==='LI'||role==='listitem'||role==='article'||role==='gridcell'){\n" +
             "        el.style.setProperty('display','none','important'); return;\n" +
             "      }\n" +
-            // Only use dimension check on block containers, not on inline/link elements
+            // Dimension fallback: only stop at block-level containers, not <a>/<span>/<img>.
+            // This ensures we walk past the inner <a> wrapping the card content and
+            // reach the outer card <div> so no empty slot is left in the grid.
             "      if((tag==='DIV'||tag==='SECTION')&&el.offsetWidth>120&&el.offsetHeight>120){\n" +
             "        el.style.setProperty('display','none','important'); return;\n" +
             "      }\n" +
@@ -291,61 +282,66 @@ public class FacebookWebViewClient extends WebViewClient {
             "    }\n" +
             "  }\n" +
             "  function hideAds(){\n" +
-            // Method 1: standard ad-marker data attributes
+            // ── M1: data-attribute markers (legacy FB ad format)
             "    try{\n" +
-            "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id]').forEach(function(el){\n" +
-            "        hideCard(el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el);\n" +
-            "      });\n" +
+            "      document.querySelectorAll('[data-ad-comet-preview],[data-ad-preview],[data-adunit-id]').forEach(function(el){ hideCard(el); });\n" +
             "    }catch(e){}\n" +
-            // Method 2: aria-label containing "Sponsored" (covers attribute-level labelling)
+            // ── M2: aria-label containing "Sponsored" / "Promoted"
             "    try{\n" +
-            "      document.querySelectorAll('[aria-label*=\"Sponsored\"],[aria-label*=\"Promoted\"],[aria-label*=\"sponsored\"]').forEach(function(el){\n" +
-            "        hideCard(el.closest('[role=\"article\"]')||el.closest('li')||el);\n" +
-            "      });\n" +
+            "      document.querySelectorAll('[aria-label*=\"Sponsored\"],[aria-label*=\"sponsored\"],[aria-label*=\"Promoted\"]').forEach(function(el){ hideCard(el); });\n" +
             "    }catch(e){}\n" +
-            // Method 3: desktop right-rail ad column
+            // ── M3: right-rail ad column
             "    try{\n" +
             "      document.querySelectorAll('[data-pagelet=\"RightRail\"],[data-pagelet*=\"AdUnit\"]').forEach(function(el){\n" +
             "        el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
-            // Method 4: TreeWalker — find text nodes whose trimmed value CONTAINS a
-            // sponsored label (substring match handles zero-width spaces & hidden chars
-            // that Facebook sometimes inserts to defeat exact-match blocking).
+            // ── M4: href-pattern — sponsored marketplace links embed 'sponsored' in
+            //        the ref parameter or carry an explicit ad_id query key.
             "    try{\n" +
-            "      var tw=document.createTreeWalker(document.body||document.documentElement,4,{\n" +
-            "        acceptNode:function(n){\n" +
-            "          var v=(n.nodeValue||'').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').trim();\n" +
-            "          return SPONSORED_LABELS.some(function(l){return v===l;})?1:3;\n" +
-            "        }\n" +
-            "      });\n" +
-            "      var node;\n" +
-            "      while((node=tw.nextNode())){\n" +
-            "        hideCard(node.parentElement);\n" +
-            "      }\n" +
+            "      document.querySelectorAll('a[href*=\"sponsored\"],a[href*=\"ad_id=\"]').forEach(function(el){ hideCard(el); });\n" +
             "    }catch(e){}\n" +
-            // Method 5: scan leaf <span> and <a> elements for exact sponsored text.
-            // Catches cases where the text is split across nested spans that the
-            // TreeWalker handles individually as non-matching partial nodes.
+            // ── M5: comprehensive textContent scan — the robust replacement for the
+            //        old TreeWalker + leaf-span scan.
+            //
+            //   Previous blind spots fixed:
+            //     • TreeWalker only matched exact text NODES — missed text split
+            //       across sibling nodes (e.g. <span>Spon</span><span>sored</span>).
+            //     • Leaf-span scan bailed when el.children.length > 0 — missed elements
+            //       like <span><svg/>Sponsored</span> where an icon shares the element.
+            //
+            //   This scan uses el.textContent which aggregates all descendant text,
+            //   so it catches every rendering variant.  We skip elements with long
+            //   text (> 30 chars) because those are card-containers, not label elements.
             "    try{\n" +
-            "      document.querySelectorAll('span,a').forEach(function(el){\n" +
-            "        if(el.children.length>0) return;\n" +
-            "        var v=(el.textContent||'').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').trim();\n" +
-            "        if(SPONSORED_LABELS.some(function(l){return v===l;})) hideCard(el);\n" +
-            "      });\n" +
+            "      var els=document.getElementsByTagName('*');\n" +
+            "      for(var i=0;i<els.length;i++){\n" +
+            "        var el=els[i],tag=el.tagName;\n" +
+            "        if(tag==='SCRIPT'||tag==='STYLE'||tag==='HTML'||tag==='HEAD') continue;\n" +
+            "        var t=(el.textContent||'').replace(/[\\u200B-\\u200D\\uFEFF\\u00AD]/g,'').trim();\n" +
+            "        if(t.length===0||t.length>30) continue;\n" +
+            "        if(SPONSORED_LABELS.some(function(l){return t===l;})) hideCard(el);\n" +
+            "      }\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideAds();\n" +
-            "  setTimeout(hideAds,400); setTimeout(hideAds,1200); setTimeout(hideAds,3000); setTimeout(hideAds,8000);\n" +
-            // Scroll listener: when user scrolls, Facebook renders newly visible items.
-            // Debounce hideAds() 300ms after scroll stops so layout is complete.
+            "  setTimeout(hideAds,500); setTimeout(hideAds,1500); setTimeout(hideAds,4000); setTimeout(hideAds,10000);\n" +
+            // Scroll listener: run after scroll settles so newly rendered cards are
+            // fully laid out (dimensions non-zero) before we scan.
             "  if(!window.__fbLiteScroll){\n" +
             "    window.__fbLiteScroll=true;\n" +
             "    var _scrollT=null;\n" +
             "    window.addEventListener('scroll',function(){\n" +
             "      clearTimeout(_scrollT);\n" +
-            "      _scrollT=setTimeout(function(){ hideAds(); setTimeout(hideAds,400); },300);\n" +
+            "      _scrollT=setTimeout(function(){ hideAds(); setTimeout(hideAds,800); },400);\n" +
             "    },{passive:true,capture:true});\n" +
+            "  }\n" +
+            // setInterval: guaranteed catch-all — sweeps every 2 s regardless of
+            // events.  Picks up ads that render outside our mutation/scroll windows
+            // (e.g. very slow network or delayed lazy-load).
+            "  if(!window.__fbLiteInterval){\n" +
+            "    window.__fbLiteInterval=true;\n" +
+            "    setInterval(hideAds,2000);\n" +
             "  }\n" +
             // ── 7. Unread message badge ──────────────────────────────────────
             // Only runs on the /messages page. Reads the count from document.title
@@ -386,9 +382,9 @@ public class FacebookWebViewClient extends WebViewClient {
             "    try{ new MutationObserver(function(){\n" +
             "      hideNav(); clean();\n" +
             "      clearTimeout(_adsTimer);\n" +
-            // Run hideAds at 150ms (first pass) then again at 550ms (second pass after
-            // React finishes painting card images and dimensions become non-zero).
-            "      _adsTimer=setTimeout(function(){ hideAds(); setTimeout(hideAds,400); },150);\n" +
+            // Run hideAds at 200ms (first pass) then 600ms (after React finishes
+            // painting card images so dimensions are non-zero for the fallback check).
+            "      _adsTimer=setTimeout(function(){ hideAds(); setTimeout(hideAds,600); },200);\n" +
             "    }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
             "  }\n" +
             "})();\n";
