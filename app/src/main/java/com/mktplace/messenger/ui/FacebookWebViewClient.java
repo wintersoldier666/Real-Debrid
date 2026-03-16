@@ -14,18 +14,15 @@ public class FacebookWebViewClient extends WebViewClient {
         void onBlockedUrl();
     }
 
-    // messenger.com is fully allowed
-    private static final String[] FULL_ACCESS_HOSTS = {
-        "www.messenger.com", "messenger.com"
-    };
-
     private static final String[] FACEBOOK_HOSTS = {
         "www.facebook.com", "facebook.com", "m.facebook.com",
         "web.facebook.com", "l.facebook.com"
     };
 
+    // Paths on facebook.com that are explicitly allowed
     private static final String[] ALLOWED_FB_PREFIXES = {
-        "/marketplace", "/login", "/checkpoint",
+        "/marketplace",              // browse + inbox lives under here
+        "/login", "/checkpoint",
         "/recover", "/two_step_verification", "/rsrc.php"
     };
 
@@ -34,7 +31,8 @@ public class FacebookWebViewClient extends WebViewClient {
         "/stories", "/story", "/events", "/groups", "/pages",
         "/gaming", "/jobs", "/news", "/ads", "/fundraisers",
         "/friends", "/notifications", "/hashtag", "/photos",
-        "/live", "/memories", "/saved", "/messages"   // /messages redirects to messenger install
+        "/live", "/memories", "/saved",
+        "/messages"   // /messages → download-Messenger page; use /marketplace/inbox instead
     };
 
     private final Callbacks callbacks;
@@ -93,11 +91,6 @@ public class FacebookWebViewClient extends WebViewClient {
         // CDN — always allow
         if (host.endsWith("fbcdn.net") || host.endsWith("facebook.net")
                 || host.endsWith("fbsbx.com")) return false;
-
-        // messenger.com — fully allow
-        for (String h : FULL_ACCESS_HOSTS) {
-            if (host.equals(h) || host.endsWith("." + h)) return false;
-        }
 
         // Must be a Facebook host
         boolean isFB = false;

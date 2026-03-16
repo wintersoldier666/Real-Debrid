@@ -24,8 +24,8 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    // messenger.com = web Messenger, avoids the "install Messenger" prompt
-    private static final String URL_MESSAGES    = "https://www.messenger.com/";
+    // Marketplace inbox — stays inside facebook.com, no Messenger app needed
+    private static final String URL_MESSAGES    = "https://www.facebook.com/marketplace/inbox/";
 
     private static final int TAB_MARKETPLACE = 0;
     private static final int TAB_MESSAGES    = 1;
