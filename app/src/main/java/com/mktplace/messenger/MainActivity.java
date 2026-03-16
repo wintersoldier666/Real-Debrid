@@ -6,7 +6,6 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
-import android.os.Handler;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
@@ -25,9 +24,8 @@ import com.mktplace.messenger.ui.FacebookWebViewClient;
 public class MainActivity extends Activity {
 
     private static final String URL_MARKETPLACE = "https://www.facebook.com/marketplace/";
-    // mbasic.facebook.com is Facebook's plain-HTML interface for low-end phones.
-    // It has NO JavaScript redirects and serves messages directly — the only
-    // reliable way to read messages in a WebView without being pushed to the app.
+    // mbasic.facebook.com is Facebook's plain-HTML interface — no JS redirects,
+    // serves messages as static HTML without pushing to the Messenger app.
     private static final String URL_MESSAGES    = "https://mbasic.facebook.com/messages/";
 
     private static final String UA_MOBILE =
@@ -50,24 +48,12 @@ public class MainActivity extends Activity {
     private ImageView    iconMessages;
     private TextView     labelMessages;
 
-    private int     currentTab    = TAB_MARKETPLACE;
-    // True while a page is actively loading; enforcement is skipped to avoid
-    // interrupting Facebook's internal redirect chains (login, SPA navigation)
-    private boolean isPageLoading = false;
+    private int currentTab = TAB_MARKETPLACE;
 
     private FacebookWebViewClient fbClient;
 
-    // Polls the WebView URL every 600 ms to catch SPA navigation that
-    // bypasses shouldOverrideUrlLoading (e.g. Facebook's history.pushState)
-    private final Handler   pollHandler = new Handler();
-    private final Runnable  pollRunnable = new Runnable() {
-        @Override public void run() {
-            enforceCurrentTab();
-            pollHandler.postDelayed(this, 600);
-        }
-    };
-
-    // JavaScript → Java bridge so pushState interception can ping us
+    // JS → Java bridge: the injected pushState interceptor calls FBLite.onNav(url)
+    // whenever Facebook's SPA navigates to a new URL without a real page load.
     private class NavBridge {
         @JavascriptInterface
         public void onNav(final String url) {
@@ -106,8 +92,6 @@ public class MainActivity extends Activity {
         if (savedInstanceState == null) {
             loadTab(TAB_MARKETPLACE);
         }
-
-        pollHandler.postDelayed(pollRunnable, 600);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -122,28 +106,23 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
-        s.setUserAgentString(UA_MOBILE); // default; swapped per-tab in loadTab()
+        s.setUserAgentString(UA_MOBILE);
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        // JS bridge: Facebook's pushState interceptor calls FBLite.onNav(url)
         webView.addJavascriptInterface(new NavBridge(), "FBLite");
 
         fbClient = new FacebookWebViewClient(new FacebookWebViewClient.Callbacks() {
             @Override public void onPageStarted(String url) {
-                isPageLoading = true;
                 progressBar.setVisibility(View.VISIBLE);
                 hideAllOverlays();
-                // Do NOT redirect here — Facebook makes many internal redirects
-                // during login and SPA navigation; intercepting here breaks auth.
             }
             @Override public void onPageFinished() {
-                isPageLoading = false;
                 progressBar.setVisibility(View.GONE);
             }
-            @Override public void onPageError()   { isPageLoading = false; showError(); }
-            @Override public void onBlockedUrl()  { /* handled by shouldOverrideUrlLoading */ }
+            @Override public void onPageError()  { showError(); }
+            @Override public void onBlockedUrl() { redirectToCurrentTab(); }
         });
 
         webView.setWebViewClient(fbClient);
@@ -153,17 +132,6 @@ public class MainActivity extends Activity {
                 if (p >= 100) progressBar.setVisibility(View.GONE);
             }
         }));
-    }
-
-    /** Periodically called; redirects back if user navigated somewhere blocked.
-     *  Skipped while a page is loading to avoid interrupting redirect chains. */
-    private void enforceCurrentTab() {
-        if (isPageLoading) return;
-        String url = webView.getUrl();
-        if (url == null || url.isEmpty()) return;
-        if (fbClient != null && fbClient.isBlocked(url)) {
-            redirectToCurrentTab();
-        }
     }
 
     private void redirectToCurrentTab() {
@@ -197,9 +165,6 @@ public class MainActivity extends Activity {
         currentTab = tab;
         hideAllOverlays();
         if (!isNetworkAvailable()) { showError(); return; }
-
-        webView.getSettings().setUserAgentString(UA_MOBILE);
-
         String url = (tab == TAB_MARKETPLACE) ? URL_MARKETPLACE : URL_MESSAGES;
         tvTitle.setText(tab == TAB_MARKETPLACE ? "Marketplace" : "Messages");
         webView.loadUrl(url);
@@ -238,11 +203,9 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (webView.canGoBack()) {
-                webView.goBack();
-                return true;
-            }
+        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+            webView.goBack();
+            return true;
         }
         return super.onKeyDown(keyCode, event);
     }
@@ -262,7 +225,7 @@ public class MainActivity extends Activity {
         updateNavColors(currentTab);
     }
 
-    @Override protected void onPause()   { super.onPause();   webView.onPause();  pollHandler.removeCallbacks(pollRunnable); }
-    @Override protected void onResume()  { super.onResume();  webView.onResume(); pollHandler.postDelayed(pollRunnable, 600); }
-    @Override protected void onDestroy() { pollHandler.removeCallbacks(pollRunnable); webView.destroy(); super.onDestroy(); }
+    @Override protected void onPause()   { super.onPause();   webView.onPause();  }
+    @Override protected void onResume()  { super.onResume();  webView.onResume(); }
+    @Override protected void onDestroy() { webView.destroy(); super.onDestroy();  }
 }
