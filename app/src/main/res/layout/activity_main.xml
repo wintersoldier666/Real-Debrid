@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    android:orientation="vertical">
 
     <!-- Top bar -->
     <LinearLayout
@@ -16,7 +14,9 @@
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"
+        android:paddingLeft="16dp"
         android:paddingEnd="8dp"
+        android:paddingRight="8dp"
         android:elevation="4dp">
 
         <TextView
@@ -27,53 +27,32 @@
             android:text="@string/app_name"
             android:textColor="@color/facebook_white"
             android:textSize="20sp"
-            android:textStyle="bold"
-            android:fontFamily="sans-serif-medium" />
-
-        <ProgressBar
-            android:id="@+id/topProgressBar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="3dp"
-            android:layout_gravity="bottom"
-            android:progressTint="@color/facebook_white"
-            android:visibility="gone"
-            android:max="100" />
+            android:textStyle="bold" />
 
     </LinearLayout>
 
-    <!-- Loading progress bar under top bar -->
+    <!-- Loading progress bar -->
     <ProgressBar
         android:id="@+id/progressBar"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="3dp"
-        android:layout_marginTop="56dp"
         android:progressTint="@color/facebook_blue"
-        android:indeterminate="false"
         android:visibility="gone"
         android:max="100" />
 
-    <!-- Main content area -->
+    <!-- Content area (fills remaining space) -->
     <FrameLayout
         android:id="@+id/contentFrame"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="56dp"
-        android:layout_marginBottom="60dp">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <!-- WebView -->
-        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-            android:id="@+id/swipeRefresh"
+        <WebView
+            android:id="@+id/webView"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
-
-            <WebView
-                android:id="@+id/webView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-
-        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            android:layout_height="match_parent" />
 
         <!-- Error view -->
         <LinearLayout
@@ -87,12 +66,13 @@
             android:visibility="gone">
 
             <TextView
-                android:id="@+id/tvErrorIcon"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="⚠"
-                android:textSize="64sp"
-                android:layout_marginBottom="16dp" />
+                android:text="No Internet"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/facebook_dark"
+                android:layout_marginBottom="8dp" />
 
             <TextView
                 android:id="@+id/tvErrorMessage"
@@ -100,19 +80,21 @@
                 android:layout_height="wrap_content"
                 android:text="@string/error_no_internet"
                 android:textColor="@color/facebook_gray"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:gravity="center"
                 android:layout_marginBottom="24dp" />
 
-            <com.google.android.material.button.MaterialButton
+            <Button
                 android:id="@+id/btnRetry"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/retry"
-                app:backgroundTint="@color/facebook_blue"
+                android:background="@color/facebook_blue"
                 android:textColor="@color/facebook_white"
                 android:paddingStart="32dp"
-                android:paddingEnd="32dp" />
+                android:paddingLeft="32dp"
+                android:paddingEnd="32dp"
+                android:paddingRight="32dp" />
 
         </LinearLayout>
 
@@ -130,53 +112,105 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="🚫"
-                android:textSize="64sp"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:text="Not Available"
-                android:textColor="@color/facebook_dark"
-                android:textSize="20sp"
+                android:textSize="22sp"
                 android:textStyle="bold"
+                android:textColor="@color/facebook_dark"
                 android:layout_marginBottom="8dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="This section is not available in Facebook Lite.\nOnly Marketplace and Messages are enabled."
+                android:text="This section is not available.\nOnly Marketplace and Messages are enabled."
                 android:textColor="@color/facebook_gray"
                 android:textSize="15sp"
                 android:gravity="center"
                 android:layout_marginBottom="24dp" />
 
-            <com.google.android.material.button.MaterialButton
+            <Button
                 android:id="@+id/btnGoMarketplace"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Go to Marketplace"
-                app:backgroundTint="@color/facebook_blue"
+                android:background="@color/facebook_blue"
                 android:textColor="@color/facebook_white"
                 android:paddingStart="32dp"
-                android:paddingEnd="32dp" />
+                android:paddingLeft="32dp"
+                android:paddingEnd="32dp"
+                android:paddingRight="32dp" />
 
-        </LinearLayout>
+    </LinearLayout>
 
     </FrameLayout>
 
-    <!-- Bottom Navigation -->
-    <com.google.android.material.bottomnavigation.BottomNavigationView
+    <!-- Bottom navigation bar -->
+    <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:layout_gravity="bottom"
         android:background="@color/facebook_white"
-        app:itemIconTint="@color/nav_selector"
-        app:itemTextColor="@color/nav_selector"
-        app:menu="@menu/bottom_nav_menu"
-        app:labelVisibilityMode="labeled"
-        android:elevation="8dp" />
+        android:orientation="horizontal"
+        android:elevation="8dp">
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+        <!-- Marketplace tab -->
+        <LinearLayout
+            android:id="@+id/tabMarketplace"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/iconMarketplace"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="&#xF291;"
+                android:textSize="22sp"
+                android:textColor="@color/nav_selected" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Marketplace"
+                android:textSize="11sp"
+                android:textColor="@color/nav_selected" />
+
+        </LinearLayout>
+
+        <!-- Messages tab -->
+        <LinearLayout
+            android:id="@+id/tabMessages"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/iconMessages"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="&#xF0E0;"
+                android:textSize="22sp"
+                android:textColor="@color/nav_unselected" />
+
+            <TextView
+                android:id="@+id/tvMessages"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Messages"
+                android:textSize="11sp"
+                android:textColor="@color/nav_unselected" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,299 +1,205 @@
 package com.facebook.lite
 
+import android.app.Activity
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
-import androidx.appcompat.app.AppCompatActivity
-import com.facebook.lite.databinding.ActivityMainBinding
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import com.facebook.lite.ui.FacebookWebChromeClient
 import com.facebook.lite.ui.FacebookWebViewClient
-import com.google.android.material.bottomnavigation.BottomNavigationView
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
 
-    private lateinit var binding: ActivityMainBinding
+    private lateinit var webView: WebView
+    private lateinit var progressBar: ProgressBar
+    private lateinit var tvTitle: TextView
+    private lateinit var errorView: LinearLayout
+    private lateinit var blockedView: LinearLayout
+    private lateinit var tabMarketplace: LinearLayout
+    private lateinit var tabMessages: LinearLayout
+    private lateinit var iconMarketplace: TextView
+    private lateinit var iconMessages: TextView
+    private lateinit var tvMessages: TextView
 
-    // Track current tab so we can restore on back-press
     private var currentTab = Tab.MARKETPLACE
 
-    // Facebook URLs for each section
+    private enum class Tab { MARKETPLACE, MESSAGES }
+
     private object Urls {
         const val MARKETPLACE = "https://www.facebook.com/marketplace/"
         const val MESSAGES    = "https://www.facebook.com/messages/"
     }
 
-    private enum class Tab {
-        MARKETPLACE,
-        MESSAGES
-    }
-
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_main)
+
+        webView         = findViewById(R.id.webView) as WebView
+        progressBar     = findViewById(R.id.progressBar) as ProgressBar
+        tvTitle         = findViewById(R.id.tvTitle) as TextView
+        errorView       = findViewById(R.id.errorView) as LinearLayout
+        blockedView     = findViewById(R.id.blockedView) as LinearLayout
+        tabMarketplace  = findViewById(R.id.tabMarketplace) as LinearLayout
+        tabMessages     = findViewById(R.id.tabMessages) as LinearLayout
+        iconMarketplace = findViewById(R.id.iconMarketplace) as TextView
+        iconMessages    = findViewById(R.id.iconMessages) as TextView
+        tvMessages      = findViewById(R.id.tvMessages) as TextView
 
         setupWebView()
-        setupBottomNav()
-        setupSwipeRefresh()
-        setupErrorButtons()
+        setupNavigation()
+        setupButtons()
 
-        // Load initial tab
         if (savedInstanceState == null) {
             loadTab(Tab.MARKETPLACE)
         }
     }
 
-    // ------------------------------------------------------------------ WebView
-
     private fun setupWebView() {
-        val webView = binding.webView
+        val settings = webView.settings
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.loadWithOverviewMode = true
+        settings.useWideViewPort = true
+        settings.setSupportZoom(true)
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.mediaPlaybackRequiresUserGesture = true
+        settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; Pixel 4) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/120.0.0.0 Mobile Safari/537.36"
 
-        // Configure settings
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            setSupportZoom(true)
-            builtInZoomControls = true
-            displayZoomControls = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            cacheMode = WebSettings.LOAD_DEFAULT
-            mediaPlaybackRequiresUserGesture = true
-            // Set a real mobile user-agent so Facebook serves the mobile site
-            userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
-                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/120.0.0.0 Mobile Safari/537.36"
-        }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        // Accept cookies (required for Facebook login)
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(webView, true)
-        }
-
-        // Set our custom clients
-        webView.webViewClient = FacebookWebViewClient(
-            onPageStarted = { showLoading() },
-            onPageFinished = { hideLoading() },
-            onPageError = { showError() },
-            onBlockedUrl = { showBlockedScreen() },
-            onProgressUpdate = { binding.progressBar.progress = it }
-        )
-
-        webView.webChromeClient = FacebookWebChromeClient(
-            onProgressChanged = { progress ->
-                binding.progressBar.apply {
-                    visibility = if (progress < 100) View.VISIBLE else View.GONE
-                    this.progress = progress
-                }
-                binding.swipeRefresh.isRefreshing = false
+        webView.setWebViewClient(FacebookWebViewClient(
+            onPageStarted = {
+                progressBar.visibility = View.VISIBLE
+                hideAllOverlays()
             },
-            onTitleReceived = { /* optional: update title */ }
-        )
+            onPageFinished = {
+                progressBar.visibility = View.GONE
+            },
+            onPageError = { showError() },
+            onBlockedUrl = { showBlockedScreen() }
+        ))
+
+        webView.setWebChromeClient(FacebookWebChromeClient { progress ->
+            progressBar.progress = progress
+            if (progress >= 100) progressBar.visibility = View.GONE
+        })
     }
 
-    // ------------------------------------------------------------------ Bottom Navigation
-
-    private fun setupBottomNav() {
-        binding.bottomNav.setOnItemSelectedListener { item ->
-            val tab = when (item.itemId) {
-                R.id.nav_marketplace -> Tab.MARKETPLACE
-                R.id.nav_messages    -> Tab.MESSAGES
-                else -> return@setOnItemSelectedListener false
-            }
-            if (tab != currentTab) {
-                loadTab(tab)
-            }
-            true
+    private fun setupNavigation() {
+        tabMarketplace.setOnClickListener {
+            if (currentTab != Tab.MARKETPLACE) loadTab(Tab.MARKETPLACE)
+        }
+        tabMessages.setOnClickListener {
+            if (currentTab != Tab.MESSAGES) loadTab(Tab.MESSAGES)
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun setupButtons() {
+        val btnRetry = findViewById(R.id.btnRetry) as Button
+        btnRetry.setOnClickListener {
+            if (isNetworkAvailable()) {
+                hideAllOverlays()
+                webView.reload()
+            } else {
+                showError()
+            }
+        }
+        val btnGo = findViewById(R.id.btnGoMarketplace) as Button
+        btnGo.setOnClickListener { loadTab(Tab.MARKETPLACE) }
+    }
+
+    @Suppress("DEPRECATION")
     private fun loadTab(tab: Tab) {
         currentTab = tab
-
-        // Hide any error/blocked screens
         hideAllOverlays()
+        if (!isNetworkAvailable()) { showError(); return }
 
-        // Check network before loading
-        if (!isNetworkAvailable()) {
-            showError()
-            return
-        }
+        val url = if (tab == Tab.MARKETPLACE) Urls.MARKETPLACE else Urls.MESSAGES
+        tvTitle.text = if (tab == Tab.MARKETPLACE) "Marketplace" else "Messages"
 
-        val url = when (tab) {
-            Tab.MARKETPLACE -> Urls.MARKETPLACE
-            Tab.MESSAGES    -> Urls.MESSAGES
+        val current = webView.url ?: ""
+        if (!current.startsWith(url.dropLast(1))) {
+            webView.loadUrl(url)
         }
-
-        // Update title in top bar
-        binding.tvTitle.text = when (tab) {
-            Tab.MARKETPLACE -> getString(R.string.nav_marketplace)
-            Tab.MESSAGES    -> getString(R.string.nav_messages)
-        }
-
-        // Only reload if the current URL differs
-        val currentUrl = binding.webView.url ?: ""
-        if (!currentUrl.startsWith(url.removeSuffix("/"))) {
-            binding.webView.loadUrl(url)
-        }
-
-        // Sync bottom nav selection
-        val itemId = when (tab) {
-            Tab.MARKETPLACE -> R.id.nav_marketplace
-            Tab.MESSAGES    -> R.id.nav_messages
-        }
-        binding.bottomNav.selectedItemId = itemId
+        updateNavColors(tab)
     }
 
-    // ------------------------------------------------------------------ SwipeRefresh
+    @Suppress("DEPRECATION")
+    private fun updateNavColors(active: Tab) {
+        val blue = resources.getColor(R.color.nav_selected)
+        val gray = resources.getColor(R.color.nav_unselected)
 
-    private fun setupSwipeRefresh() {
-        binding.swipeRefresh.setColorSchemeColors(
-            getColor(R.color.facebook_blue)
-        )
-        binding.swipeRefresh.setOnRefreshListener {
-            hideAllOverlays()
-            if (isNetworkAvailable()) {
-                binding.webView.reload()
-            } else {
-                binding.swipeRefresh.isRefreshing = false
-                showError()
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------ Error / Blocked screens
-
-    private fun setupErrorButtons() {
-        binding.btnRetry.setOnClickListener {
-            hideAllOverlays()
-            if (isNetworkAvailable()) {
-                binding.webView.reload()
-            } else {
-                showError()
-            }
-        }
-
-        binding.btnGoMarketplace.setOnClickListener {
-            loadTab(Tab.MARKETPLACE)
-        }
-    }
-
-    private fun showLoading() {
-        hideAllOverlays()
-        binding.progressBar.visibility = View.VISIBLE
-    }
-
-    private fun hideLoading() {
-        binding.progressBar.visibility = View.GONE
+        iconMarketplace.setTextColor(if (active == Tab.MARKETPLACE) blue else gray)
+        val mLabel = tabMarketplace.getChildAt(1) as TextView
+        mLabel.setTextColor(if (active == Tab.MARKETPLACE) blue else gray)
+        iconMessages.setTextColor(if (active == Tab.MESSAGES) blue else gray)
+        tvMessages.setTextColor(if (active == Tab.MESSAGES) blue else gray)
     }
 
     private fun showError() {
-        binding.swipeRefresh.visibility = View.GONE
-        binding.errorView.visibility = View.VISIBLE
-        binding.blockedView.visibility = View.GONE
-        binding.progressBar.visibility = View.GONE
+        webView.visibility = View.GONE
+        errorView.visibility = View.VISIBLE
+        blockedView.visibility = View.GONE
+        progressBar.visibility = View.GONE
     }
 
     private fun showBlockedScreen() {
-        binding.swipeRefresh.visibility = View.GONE
-        binding.blockedView.visibility = View.VISIBLE
-        binding.errorView.visibility = View.GONE
-        binding.progressBar.visibility = View.GONE
+        webView.visibility = View.GONE
+        blockedView.visibility = View.VISIBLE
+        errorView.visibility = View.GONE
+        progressBar.visibility = View.GONE
     }
 
     private fun hideAllOverlays() {
-        binding.swipeRefresh.visibility = View.VISIBLE
-        binding.errorView.visibility = View.GONE
-        binding.blockedView.visibility = View.GONE
+        webView.visibility = View.VISIBLE
+        errorView.visibility = View.GONE
+        blockedView.visibility = View.GONE
     }
 
-    // ------------------------------------------------------------------ Network
-
+    @Suppress("DEPRECATION")
     private fun isNetworkAvailable(): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val info = cm.activeNetworkInfo
+        return info != null && info.isConnected
     }
 
-    // ------------------------------------------------------------------ Back Press
-
-    @Deprecated("Using legacy onKeyDown for WebView back navigation")
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            val webView = binding.webView
-            if (webView.canGoBack()) {
-                val backForwardList = webView.copyBackForwardList()
-                // Walk back only within allowed pages
-                val targetIndex = findSafeBackIndex(backForwardList, webView.copyBackForwardList().currentIndex)
-                if (targetIndex >= 0) {
-                    val steps = webView.copyBackForwardList().currentIndex - targetIndex
-                    webView.goBackOrForward(-steps)
-                    return true
-                }
-            }
+        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+            webView.goBack()
+            return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun findSafeBackIndex(list: android.webkit.WebBackForwardList, currentIndex: Int): Int {
-        for (i in currentIndex - 1 downTo 0) {
-            val item = list.getItemAtIndex(i)
-            val url = item?.url ?: continue
-            if (isUrlAllowed(url)) return i
-        }
-        return -1
-    }
-
-    private fun isUrlAllowed(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.contains("/marketplace") || lower.contains("/messages") || lower.contains("/login")
-    }
-
-    // ------------------------------------------------------------------ Save state
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        binding.webView.saveState(outState)
-        outState.putString("current_tab", currentTab.name)
+        webView.saveState(outState)
+        outState.putString("tab", currentTab.name)
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-        binding.webView.restoreState(savedInstanceState)
-        currentTab = Tab.valueOf(savedInstanceState.getString("current_tab", Tab.MARKETPLACE.name)!!)
-        // Sync bottom nav
-        binding.bottomNav.selectedItemId = when (currentTab) {
-            Tab.MARKETPLACE -> R.id.nav_marketplace
-            Tab.MESSAGES    -> R.id.nav_messages
-        }
+        webView.restoreState(savedInstanceState)
+        currentTab = Tab.valueOf(savedInstanceState.getString("tab") ?: Tab.MARKETPLACE.name)
+        updateNavColors(currentTab)
     }
 
-    override fun onPause() {
-        super.onPause()
-        binding.webView.onPause()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        binding.webView.onResume()
-    }
-
-    override fun onDestroy() {
-        binding.webView.apply {
-            stopLoading()
-            clearHistory()
-            destroy()
-        }
-        super.onDestroy()
-    }
+    override fun onPause()   { super.onPause();   webView.onPause() }
+    override fun onResume()  { super.onResume();  webView.onResume() }
+    override fun onDestroy() { webView.destroy(); super.onDestroy() }
 }
