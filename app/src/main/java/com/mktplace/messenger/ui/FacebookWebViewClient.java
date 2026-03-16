@@ -154,7 +154,14 @@ public class FacebookWebViewClient extends WebViewClient {
         // language=JavaScript
         String js =
             "(function(){\n" +
-            // ── 1. CSS hide (fast, before JS runs) ─────────────────────────
+            // ── 1. Remove meta tags that trigger native "Open in app" browser banners
+            "  try{\n" +
+            "    document.querySelectorAll(\n" +
+            "      'meta[name=\"al:android:url\"],meta[name=\"al:ios:url\"],\n" +
+            "       meta[name=\"google-play-app\"],meta[name=\"apple-itunes-app\"]'\n" +
+            "    ).forEach(function(m){ m.parentNode && m.parentNode.removeChild(m); });\n" +
+            "  }catch(e){}\n" +
+            // ── 2. CSS hide (fast initial paint) ────────────────────────────
             "  var H = [\n" +
             "    '[data-pagelet=\"MobileBottomBar\"]',\n" +
             "    '[data-pagelet=\"MobileTopBar\"]',\n" +
@@ -167,60 +174,81 @@ public class FacebookWebViewClient extends WebViewClient {
             "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
             "    'nav'\n" +
             "  ];\n" +
-            "  var style = document.createElement('style');\n" +
-            "  style.id = 'fb-lite-hide';\n" +
-            "  style.textContent = H.join(',') + '{display:none!important}';\n" +
-            "  if (!document.getElementById('fb-lite-hide'))\n" +
-            "    (document.head||document.documentElement).appendChild(style);\n" +
-            // ── 2. JS force-hide with setProperty (beats Facebook inline styles) ─
-            "  function hideNav() {\n" +
+            "  if(!document.getElementById('fb-lite-hide')){\n" +
+            "    var s=document.createElement('style');\n" +
+            "    s.id='fb-lite-hide';\n" +
+            "    s.textContent=H.join(',') + '{display:none!important}';\n" +
+            "    (document.head||document.documentElement).appendChild(s);\n" +
+            "  }\n" +
+            // ── 3. JS force-hide nav (setProperty beats Facebook's inline styles) ─
+            "  function hideNav(){\n" +
             "    H.forEach(function(sel){\n" +
-            "      try{\n" +
-            "        document.querySelectorAll(sel).forEach(function(el){\n" +
-            "          el.style.setProperty('display','none','important');\n" +
-            "        });\n" +
-            "      }catch(e){}\n" +
+            "      try{ document.querySelectorAll(sel).forEach(function(el){\n" +
+            "        el.style.setProperty('display','none','important');\n" +
+            "      }); }catch(e){}\n" +
             "    });\n" +
-            // Also catch the main nav bar by content (handles pagelet name changes)
             "    try{\n" +
             "      document.querySelectorAll('[role=\"navigation\"],[role=\"banner\"]').forEach(function(el){\n" +
-            "        if(el.querySelector('[aria-label=\"Home\"],[aria-label=\"Watch\"],[aria-label=\"Groups\"],[aria-label=\"Menu\"]')){\n" +
+            "        if(el.querySelector('[aria-label=\"Home\"],[aria-label=\"Watch\"],[aria-label=\"Groups\"],[aria-label=\"Menu\"]'))\n" +
             "          el.style.setProperty('display','none','important');\n" +
-            "        }\n" +
             "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideNav();\n" +
             "  setTimeout(hideNav,300); setTimeout(hideNav,1000); setTimeout(hideNav,3000);\n" +
-            // ── 3. Remove install-app popups / sponsored posts ───────────────
-            "  function clean() {\n" +
-            "    var sels = [\n" +
-            "      '[aria-label*=\"Get the Facebook app\"]',\n" +
-            "      '[aria-label*=\"Open in Messenger\"]',\n" +
-            "      '[aria-label*=\"Continue in app\"]',\n" +
-            "      '[aria-label*=\"Switch to app\"]',\n" +
+            // ── 4. Remove "Open app" banners / install prompts ───────────────
+            // Keywords that appear in Facebook's sticky "Open in Messenger / Get the app" bars
+            "  var APP_TEXTS=['Open in Messenger','Get the Facebook app','Continue in app',\n" +
+            "    'Switch to app','Open app','Get the app','Use the app','Open Facebook'];\n" +
+            "  function clean(){\n" +
+            // Selector-based removal
+            "    var sels=[\n" +
+            "      '[aria-label*=\"Get the Facebook app\"],[aria-label*=\"Open in Messenger\"]',\n" +
+            "      '[aria-label*=\"Continue in app\"],[aria-label*=\"Switch to app\"]',\n" +
             "      '[data-testid*=\"download_app\"],[data-testid*=\"install_app\"],[data-testid*=\"upsell\"]',\n" +
             "      'a[href*=\"play.google.com/store/apps/details?id=com.facebook\"]',\n" +
+            "      'a[href*=\"apps.apple.com\"][href*=\"facebook\"]',\n" +
             "      '[class*=\"interstitial\"]','.ms-interstitial'\n" +
             "    ];\n" +
             "    sels.forEach(function(sel){\n" +
-            "      try{\n" +
-            "        document.querySelectorAll(sel).forEach(function(el){\n" +
-            "          var root=el.closest('[role=\"dialog\"]')||el.closest('div[style*=\"position: fixed\"]')||el;\n" +
-            "          root.style.setProperty('display','none','important');\n" +
-            "        });\n" +
-            "      }catch(e){}\n" +
+            "      try{ document.querySelectorAll(sel).forEach(function(el){\n" +
+            "        var root=el.closest('[role=\"dialog\"]')||el.closest('[style*=\"position: fixed\"]')||el;\n" +
+            "        root.style.setProperty('display','none','important');\n" +
+            "      }); }catch(e){}\n" +
             "    });\n" +
+            // Text-content based: hide any fixed-position div whose text matches app CTA keywords
             "    try{\n" +
             "      document.querySelectorAll('div[style*=\"position: fixed\"],div[style*=\"position:fixed\"]').forEach(function(el){\n" +
-            "        if(el.querySelector('a[href*=\"play.google.com\"]')||el.querySelector('a[href*=\"apps.apple.com\"]'))\n" +
-            "          el.style.setProperty('display','none','important');\n" +
+            "        var t=el.textContent||'';\n" +
+            "        var hasAppLink=el.querySelector('a[href*=\"play.google.com\"]')||el.querySelector('a[href*=\"apps.apple.com\"]')||el.querySelector('a[href^=\"fb://\"]')||el.querySelector('a[href^=\"intent://\"]');\n" +
+            "        var hasAppText=APP_TEXTS.some(function(k){ return t.indexOf(k)>=0; });\n" +
+            "        if(hasAppLink||hasAppText) el.style.setProperty('display','none','important');\n" +
             "      });\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  clean();\n" +
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
-            // ── 4. Intercept SPA navigation ──────────────────────────────────
+            // ── 5. Click interceptor: rewrite message links to mbasic ────────
+            // Catches the case where Facebook renders the Message button as a
+            // regular <a> but shouldOverrideUrlLoading doesn't fire (e.g. same-origin)
+            "  if(!window.__fbLiteClick){\n" +
+            "    window.__fbLiteClick=true;\n" +
+            "    document.addEventListener('click',function(e){\n" +
+            "      var el=e.target;\n" +
+            "      for(var i=0;i<6;i++){\n" +
+            "        if(!el||el===document) break;\n" +
+            "        if(el.tagName==='A'&&el.href&&el.href.indexOf('facebook.com/messages/')>=0){\n" +
+            "          e.preventDefault();\n" +
+            "          e.stopPropagation();\n" +
+            "          var u=el.href.replace(/https?:\\/\\/(?:www\\.|m\\.)?facebook\\.com\\/messages\\//,'https://mbasic.facebook.com/messages/');\n" +
+            "          window.location.href=u;\n" +
+            "          return;\n" +
+            "        }\n" +
+            "        el=el.parentElement;\n" +
+            "      }\n" +
+            "    },true);\n" +
+            "  }\n" +
+            // ── 6. Intercept SPA pushState/replaceState ──────────────────────
             "  if(!window.__fbLitePatched){\n" +
             "    window.__fbLitePatched=true;\n" +
             "    function notifyAndroid(url){\n" +
@@ -231,13 +259,11 @@ public class FacebookWebViewClient extends WebViewClient {
             "    history.replaceState=function(s,t,u){ _replace.call(history,s,t,u); notifyAndroid(u||location.href); };\n" +
             "    window.addEventListener('popstate',function(){ notifyAndroid(location.href); });\n" +
             "  }\n" +
-            // ── 5. MutationObserver re-applies hideNav + clean on DOM changes ─
+            // ── 7. MutationObserver re-runs hideNav + clean on every DOM change ─
             "  if(!window.__fbLiteObs){\n" +
             "    window.__fbLiteObs=true;\n" +
-            "    try{\n" +
-            "      new MutationObserver(function(){ hideNav(); clean(); })\n" +
-            "        .observe(document.documentElement,{childList:true,subtree:true});\n" +
-            "    }catch(e){}\n" +
+            "    try{ new MutationObserver(function(){ hideNav(); clean(); })\n" +
+            "      .observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
             "  }\n" +
             "})();\n";
 

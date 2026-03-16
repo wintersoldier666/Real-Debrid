@@ -59,7 +59,27 @@ public class MainActivity extends Activity {
         public void onNav(final String url) {
             webView.post(new Runnable() {
                 @Override public void run() {
-                    if (fbClient != null && fbClient.isBlocked(url)) {
+                    if (url == null || fbClient == null) return;
+
+                    // Resolve path from either a full URL or a relative path
+                    String path = url;
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        try {
+                            path = android.net.Uri.parse(url).getPath();
+                            if (path == null) path = "/";
+                        } catch (Exception e) { path = "/"; }
+                    } else if (!path.startsWith("/")) {
+                        path = "/" + path;
+                    }
+
+                    // Marketplace "Message Seller" uses pushState to /messages/t/THREAD_ID
+                    // Redirect those to mbasic so they open as plain HTML, no app prompt
+                    if (path.startsWith("/messages/")) {
+                        webView.loadUrl("https://mbasic.facebook.com" + path);
+                        return;
+                    }
+
+                    if (fbClient.isBlocked(url)) {
                         redirectToCurrentTab();
                     }
                 }
