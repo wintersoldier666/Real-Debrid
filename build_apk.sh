@@ -36,8 +36,9 @@ echo "=== Step 1: Package resources with aapt ==="
   -I "$ANDROID_JAR"
 
 echo "=== Step 2: Compile Kotlin sources ==="
-KT_FILES=$(find "$SRC/java" -name "*.kt")
-kotlinc $KT_FILES "$GEN/com/facebook/lite/R.java" \
+KT_FILES=$(find "$SRC/java/com/mktplace" -name "*.kt")
+R_JAVA=$(find "$GEN" -name "R.java")
+kotlinc $KT_FILES $R_JAVA \
   -classpath "$ANDROID_JAR:$KOTLIN_STDLIB" \
   -d "$OBJ" \
   -jvm-target 1.6

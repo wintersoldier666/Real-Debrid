@@ -1,4 +1,4 @@
-package com.facebook.lite
+package com.mktplace.messenger
 
 import android.app.Activity
 import android.content.Context
@@ -13,8 +13,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.facebook.lite.ui.FacebookWebChromeClient
-import com.facebook.lite.ui.FacebookWebViewClient
+import com.mktplace.messenger.ui.FacebookWebChromeClient
+import com.mktplace.messenger.ui.FacebookWebViewClient
 
 class MainActivity : Activity() {
 
