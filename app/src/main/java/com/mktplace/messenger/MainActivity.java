@@ -28,10 +28,12 @@ public class MainActivity extends Activity {
     // serves messages as static HTML without pushing to the Messenger app.
     private static final String URL_MESSAGES    = "https://mbasic.facebook.com/messages/";
 
-    private static final String UA_MOBILE =
-        "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) " +
+    // Desktop UA: Facebook serves full desktop site with no "Open in app" banners,
+    // no mobile bottom-nav tabs, and messages open as web UI instead of app redirects.
+    private static final String UA_DESKTOP =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/120.0.6099.210 Mobile Safari/537.36";
+        "Chrome/124.0.0.0 Safari/537.36";
 
     private static final int TAB_MARKETPLACE = 0;
     private static final int TAB_MESSAGES    = 1;
@@ -126,7 +128,7 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
-        s.setUserAgentString(UA_MOBILE);
+        s.setUserAgentString(UA_DESKTOP);
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);

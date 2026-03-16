@@ -163,15 +163,19 @@ public class FacebookWebViewClient extends WebViewClient {
             "  }catch(e){}\n" +
             // ── 2. CSS hide (fast initial paint) ────────────────────────────
             "  var H = [\n" +
+            // Desktop nav / chrome
+            "    '[data-pagelet=\"LeftRail\"]',\n" +           // left sidebar (Home/Watch/Groups links)
+            "    '[data-pagelet=\"RightRail\"]',\n" +          // right sidebar (ads column on desktop)
+            "    '[data-pagelet=\"MWNavigation\"]',\n" +
+            "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
+            // Mobile nav (still present on mbasic / fallback pages)
             "    '[data-pagelet=\"MobileBottomBar\"]',\n" +
             "    '[data-pagelet=\"MobileTopBar\"]',\n" +
-            "    '[data-pagelet=\"MWNavigation\"]',\n" +
-            "    '[data-pagelet=\"LeftRail\"]',\n" +
+            // Feed / distraction sections
             "    '[data-pagelet*=\"Reels\"]',\n" +
             "    '[data-pagelet*=\"NewsFeed\"]',\n" +
             "    '[data-pagelet*=\"FeedUnit\"]',\n" +
             "    '[data-pagelet*=\"Stories\"]',\n" +
-            "    '[data-pagelet=\"MWChatTabBar\"]',\n" +
             "    'nav'\n" +
             "  ];\n" +
             "  if(!document.getElementById('fb-lite-hide')){\n" +
@@ -228,7 +232,37 @@ public class FacebookWebViewClient extends WebViewClient {
             "  }\n" +
             "  clean();\n" +
             "  setTimeout(clean,500); setTimeout(clean,1500); setTimeout(clean,4000);\n" +
-            // ── 5. Click interceptor: rewrite message links to mbasic ────────
+            // ── 5. Ad blocking ──────────────────────────────────────────────
+            "  function hideAds(){\n" +
+            // Standard ad markers Facebook uses on sponsored posts / listings
+            "    try{\n" +
+            "      document.querySelectorAll(\n" +
+            "        '[data-ad-comet-preview],[data-ad-preview],[data-adunit-id],\n" +
+            "         [aria-label=\"Sponsored\"]\n" +
+            "      ').forEach(function(el){\n" +
+            "        var root=el.closest('[role=\"article\"]')||el.closest('li')||el.parentElement||el;\n" +
+            "        root.style.setProperty('display','none','important');\n" +
+            "      });\n" +
+            "    }catch(e){}\n" +
+            // Desktop right-rail ad column
+            "    try{\n" +
+            "      document.querySelectorAll('[data-pagelet=\"RightRail\"],[data-pagelet*=\"AdUnit\"]').forEach(function(el){\n" +
+            "        el.style.setProperty('display','none','important');\n" +
+            "      });\n" +
+            "    }catch(e){}\n" +
+            // Marketplace sponsored listings — identified by a "Sponsored" label span
+            "    try{\n" +
+            "      document.querySelectorAll('span[aria-label=\"Sponsored\"],span[dir]').forEach(function(el){\n" +
+            "        if(el.textContent.trim()==='Sponsored'){\n" +
+            "          var card=el.closest('[role=\"listitem\"]')||el.closest('[role=\"article\"]')||el.closest('li');\n" +
+            "          if(card) card.style.setProperty('display','none','important');\n" +
+            "        }\n" +
+            "      });\n" +
+            "    }catch(e){}\n" +
+            "  }\n" +
+            "  hideAds();\n" +
+            "  setTimeout(hideAds,600); setTimeout(hideAds,2000); setTimeout(hideAds,5000);\n" +
+            // ── 7. Click interceptor: rewrite message links to mbasic ────────
             // Catches the case where Facebook renders the Message button as a
             // regular <a> but shouldOverrideUrlLoading doesn't fire (e.g. same-origin)
             "  if(!window.__fbLiteClick){\n" +
@@ -248,7 +282,7 @@ public class FacebookWebViewClient extends WebViewClient {
             "      }\n" +
             "    },true);\n" +
             "  }\n" +
-            // ── 6. Intercept SPA pushState/replaceState ──────────────────────
+            // ── 8. Intercept SPA pushState/replaceState ──────────────────────
             "  if(!window.__fbLitePatched){\n" +
             "    window.__fbLitePatched=true;\n" +
             "    function notifyAndroid(url){\n" +
@@ -259,10 +293,10 @@ public class FacebookWebViewClient extends WebViewClient {
             "    history.replaceState=function(s,t,u){ _replace.call(history,s,t,u); notifyAndroid(u||location.href); };\n" +
             "    window.addEventListener('popstate',function(){ notifyAndroid(location.href); });\n" +
             "  }\n" +
-            // ── 7. MutationObserver re-runs hideNav + clean on every DOM change ─
+            // ── 9. MutationObserver re-runs hideNav + clean + hideAds on DOM changes ─
             "  if(!window.__fbLiteObs){\n" +
             "    window.__fbLiteObs=true;\n" +
-            "    try{ new MutationObserver(function(){ hideNav(); clean(); })\n" +
+            "    try{ new MutationObserver(function(){ hideNav(); clean(); hideAds(); })\n" +
             "      .observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}\n" +
             "  }\n" +
             "})();\n";
