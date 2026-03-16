@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ghost Notes</string>
+    <string name="enter_password">Enter Password</string>
+    <string name="create_password">Create Password</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="password_hint">Master Password</string>
+    <string name="unlock">Unlock</string>
+    <string name="set_password">Set Password</string>
+    <string name="wrong_password">Wrong password</string>
+    <string name="passwords_dont_match">Passwords do not match</string>
+    <string name="password_too_short">Minimum 8 characters required</string>
+    <string name="new_note">New Note</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="title_hint">Title (encrypted)</string>
+    <string name="content_hint">Write your secret note here...</string>
+    <string name="no_notes">No notes yet.\nTap + to create one.</string>
+    <string name="confirm_delete">Delete this note?</string>
+    <string name="yes">Yes</string>
+    <string name="cancel">Cancel</string>
+    <string name="encryption_error">Encryption error</string>
+    <string name="setup_title">Setup Ghost Notes</string>
+    <string name="setup_subtitle">Create a strong master password.\nThis cannot be recovered if lost.</string>
+    <string name="app_locked">App Locked</string>
+    <string name="enter_to_unlock">Enter your password to unlock</string>
+    <string name="notes">Notes</string>
+    <string name="security_info">AES-256-GCM • PBKDF2 • Offline</string>
+</resources>

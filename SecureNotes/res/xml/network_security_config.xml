@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Block ALL network connections - app is 100% offline -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- No trust anchors = no network connections allowed -->
+        </trust-anchors>
+    </base-config>
+</network-security-config>
