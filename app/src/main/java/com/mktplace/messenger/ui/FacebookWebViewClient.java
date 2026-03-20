@@ -209,21 +209,46 @@ public class FacebookWebViewClient extends WebViewClient {
             "        el.style.setProperty('pointer-events','none','important');\n" +
             "      }); }catch(e){}\n" +
             "    });\n" +
-            // Catch Facebook's top nav bar by its visual position: a fixed/sticky
-            // element that spans the full width and is ≤ 80px tall.
-            // This works even when Facebook changes data-pagelet attribute names.
+            // ── Overlay: place a full-width white div at the very top of the screen
+            // that covers the Facebook navigation bar and blocks ALL clicks to it.
+            // This is guaranteed to work regardless of Facebook's HTML structure or
+            // class names — it's our own element with maximum z-index painted on top.
             "    try{\n" +
-            "      var topEls=document.body?Array.prototype.slice.call(document.body.children):[];\n" +
-            "      topEls.forEach(function(el){\n" +
+            "      if(!document.getElementById('fb-lite-topblock')){\n" +
+            "        var nb=document.createElement('div');\n" +
+            "        nb.id='fb-lite-topblock';\n" +
+            "        nb.style.position='fixed';\n" +
+            "        nb.style.top='0';\n" +
+            "        nb.style.left='0';\n" +
+            "        nb.style.right='0';\n" +
+            "        nb.style.height='60px';\n" +
+            "        nb.style.zIndex='2147483647';\n" +
+            "        nb.style.background='#fff';\n" +
+            "        nb.style.pointerEvents='all';\n" +
+            "        nb.style.margin='0';\n" +
+            "        nb.style.padding='0';\n" +
+            "        nb.style.border='none';\n" +
+            "        (document.body||document.documentElement).appendChild(nb);\n" +
+            "      }\n" +
+            "    }catch(e){}\n" +
+            // ── Deep fixed-element scan: walk up to 5 DOM levels below <body>
+            // to find position:fixed elements that match the nav bar profile
+            // (wide + short + sitting at the top of the viewport).
+            // Catches the nav bar when Facebook nests it inside a non-semantic wrapper.
+            "    try{\n" +
+            "      function fbHide(el,d){\n" +
+            "        if(!el||d>5) return;\n" +
             "        try{\n" +
             "          var cs=window.getComputedStyle(el);\n" +
+            "          var rect=el.getBoundingClientRect();\n" +
             "          if((cs.position==='fixed'||cs.position==='sticky')&&\n" +
-            "              el.offsetWidth>300&&el.offsetHeight>0&&el.offsetHeight<=80){\n" +
+            "              rect.top<=2&&el.offsetWidth>300&&el.offsetHeight>0&&el.offsetHeight<=80){\n" +
             "            el.style.setProperty('display','none','important');\n" +
-            "            el.style.setProperty('pointer-events','none','important');\n" +
             "          }\n" +
             "        }catch(e2){}\n" +
-            "      });\n" +
+            "        for(var i=0;i<el.children.length;i++) fbHide(el.children[i],d+1);\n" +
+            "      }\n" +
+            "      if(document.body) fbHide(document.body,0);\n" +
             "    }catch(e){}\n" +
             "  }\n" +
             "  hideNav();\n" +
@@ -336,12 +361,27 @@ public class FacebookWebViewClient extends WebViewClient {
             "      _scrollT=setTimeout(function(){ hideAds(); setTimeout(hideAds,800); },400);\n" +
             "    },{passive:true,capture:true});\n" +
             "  }\n" +
-            // setInterval: guaranteed catch-all — sweeps every 2 s regardless of
-            // events.  Picks up ads that render outside our mutation/scroll windows
-            // (e.g. very slow network or delayed lazy-load).
+            // setInterval: two jobs every 2 s —
+            //   1. hideAds sweep (catches ads outside mutation/scroll windows)
+            //   2. URL patrol — if we somehow drifted to a blocked path (e.g. because
+            //      Facebook's router held a pre-patch reference to history.pushState
+            //      and bypassed our interceptor), notify Android immediately so it can
+            //      redirect back to the current allowed tab.
             "  if(!window.__fbLiteInterval){\n" +
             "    window.__fbLiteInterval=true;\n" +
-            "    setInterval(hideAds,2000);\n" +
+            "    setInterval(function(){\n" +
+            "      hideAds();\n" +
+            "      hideNav();\n" +
+            // URL patrol
+            "      try{\n" +
+            "        var p=location.pathname;\n" +
+            "        var ok=p.startsWith('/marketplace')||p.startsWith('/messages')||\n" +
+            "               p.startsWith('/login')||p.startsWith('/checkpoint')||\n" +
+            "               p.startsWith('/two_step_verification')||p.startsWith('/recover')||\n" +
+            "               p.startsWith('/ajax')||p.startsWith('/privacy')||p.startsWith('/settings');\n" +
+            "        if(!ok&&window.FBLite) window.FBLite.onNav(location.href);\n" +
+            "      }catch(e){}\n" +
+            "    },2000);\n" +
             "  }\n" +
             // ── 7. Unread message badge ──────────────────────────────────────
             // Only runs on the /messages page. Reads the count from document.title
