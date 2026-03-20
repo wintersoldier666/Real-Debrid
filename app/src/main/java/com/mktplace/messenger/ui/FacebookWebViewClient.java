@@ -209,13 +209,15 @@ public class FacebookWebViewClient extends WebViewClient {
             "        el.style.setProperty('pointer-events','none','important');\n" +
             "      }); }catch(e){}\n" +
             "    });\n" +
-            // ── Overlay: place a full-width white div at the very top of the screen
-            // that covers the Facebook navigation bar and blocks ALL clicks to it.
-            // This is guaranteed to work regardless of Facebook's HTML structure or
-            // class names — it's our own element with maximum z-index painted on top.
+            // ── Overlay: a full-width white div covering the top 60 px.
+            // Always re-appended to the END of <body> so it is always the
+            // last element in DOM order.  When z-index is equal, last-in-DOM
+            // wins the stacking contest — this ensures our blocker sits above
+            // any nav bar element Facebook's React re-renders after us.
             "    try{\n" +
-            "      if(!document.getElementById('fb-lite-topblock')){\n" +
-            "        var nb=document.createElement('div');\n" +
+            "      var nb=document.getElementById('fb-lite-topblock');\n" +
+            "      if(!nb){\n" +
+            "        nb=document.createElement('div');\n" +
             "        nb.id='fb-lite-topblock';\n" +
             "        nb.style.position='fixed';\n" +
             "        nb.style.top='0';\n" +
@@ -228,8 +230,9 @@ public class FacebookWebViewClient extends WebViewClient {
             "        nb.style.margin='0';\n" +
             "        nb.style.padding='0';\n" +
             "        nb.style.border='none';\n" +
-            "        (document.body||document.documentElement).appendChild(nb);\n" +
             "      }\n" +
+            // appendChild on an element already in the DOM moves it to the end
+            "      (document.body||document.documentElement).appendChild(nb);\n" +
             "    }catch(e){}\n" +
             // ── Deep fixed-element scan: walk up to 5 DOM levels below <body>
             // to find position:fixed elements that match the nav bar profile
@@ -361,27 +364,40 @@ public class FacebookWebViewClient extends WebViewClient {
             "      _scrollT=setTimeout(function(){ hideAds(); setTimeout(hideAds,800); },400);\n" +
             "    },{passive:true,capture:true});\n" +
             "  }\n" +
-            // setInterval: two jobs every 2 s —
-            //   1. hideAds sweep (catches ads outside mutation/scroll windows)
-            //   2. URL patrol — if we somehow drifted to a blocked path (e.g. because
-            //      Facebook's router held a pre-patch reference to history.pushState
-            //      and bypassed our interceptor), notify Android immediately so it can
-            //      redirect back to the current allowed tab.
+            // Two intervals with different duties:
+            //
+            // ① Fast (500 ms) — URL patrol + overlay re-positioning.
+            //   Facebook's SPA router often holds a pre-injection reference to the
+            //   native history.pushState, so our pushState wrapper is bypassed for
+            //   SPA navigation.  Polling location.pathname every 500 ms catches any
+            //   drift to a blocked path within half a second — imperceptible to the
+            //   user.  We also re-append the overlay to <body> last-child every tick
+            //   so it always wins the DOM-order stacking race against React re-renders.
+            //
+            // ② Slow (2 s) — hideAds + hideNav sweep (heavier, less frequent).
             "  if(!window.__fbLiteInterval){\n" +
             "    window.__fbLiteInterval=true;\n" +
+            "    var _lastPath=location.pathname;\n" +
             "    setInterval(function(){\n" +
-            "      hideAds();\n" +
-            "      hideNav();\n" +
             // URL patrol
             "      try{\n" +
             "        var p=location.pathname;\n" +
-            "        var ok=p.startsWith('/marketplace')||p.startsWith('/messages')||\n" +
-            "               p.startsWith('/login')||p.startsWith('/checkpoint')||\n" +
-            "               p.startsWith('/two_step_verification')||p.startsWith('/recover')||\n" +
-            "               p.startsWith('/ajax')||p.startsWith('/privacy')||p.startsWith('/settings');\n" +
-            "        if(!ok&&window.FBLite) window.FBLite.onNav(location.href);\n" +
+            "        if(p!==_lastPath){\n" +
+            "          _lastPath=p;\n" +
+            "          var ok=p.startsWith('/marketplace')||p.startsWith('/messages')||\n" +
+            "                  p.startsWith('/login')||p.startsWith('/checkpoint')||\n" +
+            "                  p.startsWith('/two_step_verification')||p.startsWith('/recover')||\n" +
+            "                  p.startsWith('/ajax')||p.startsWith('/privacy')||p.startsWith('/settings');\n" +
+            "          if(!ok&&window.FBLite) window.FBLite.onNav(location.href);\n" +
+            "        }\n" +
             "      }catch(e){}\n" +
-            "    },2000);\n" +
+            // Keep overlay at end of body (last-in-DOM = always on top)
+            "      try{\n" +
+            "        var nb=document.getElementById('fb-lite-topblock');\n" +
+            "        if(nb&&document.body&&nb!==document.body.lastChild) document.body.appendChild(nb);\n" +
+            "      }catch(e){}\n" +
+            "    },500);\n" +
+            "    setInterval(function(){ hideAds(); hideNav(); },2000);\n" +
             "  }\n" +
             // ── 7. Unread message badge ──────────────────────────────────────
             // Only runs on the /messages page. Reads the count from document.title
