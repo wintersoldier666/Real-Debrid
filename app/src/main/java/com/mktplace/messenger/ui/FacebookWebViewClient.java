@@ -40,9 +40,35 @@ public class FacebookWebViewClient extends WebViewClient {
     };
 
     private final Callbacks callbacks;
+    // Timestamp of the last redirect we issued.  Used to debounce
+    // doUpdateVisitedHistory so rapid SPA nav events don't fire multiple redirects.
+    private long lastRedirectMs = 0;
 
     public FacebookWebViewClient(Callbacks callbacks) {
         this.callbacks = callbacks;
+    }
+
+    /**
+     * Called by the WebView engine for EVERY navigation commit — standard page
+     * loads AND SPA history.pushState/replaceState.  This is the Android-native
+     * equivalent of our JS pushState interceptor and fires regardless of when
+     * Facebook's router captured its reference to the native pushState function.
+     *
+     * We use this as the primary gate for SPA navigation blocking.
+     * shouldOverrideUrlLoading handles real page loads; this handles SPA nav.
+     */
+    @Override
+    public void doUpdateVisitedHistory(WebView view, final String url, boolean isReload) {
+        super.doUpdateVisitedHistory(view, url, isReload);
+        if (isReload) return;                       // plain reload — not a navigation
+        if (url == null) return;
+        long now = System.currentTimeMillis();
+        if (isBlocked(url) && now - lastRedirectMs > 1500) {
+            lastRedirectMs = now;
+            view.post(new Runnable() {
+                @Override public void run() { callbacks.onBlockedUrl(); }
+            });
+        }
     }
 
     @Override
@@ -231,8 +257,10 @@ public class FacebookWebViewClient extends WebViewClient {
             "        nb.style.padding='0';\n" +
             "        nb.style.border='none';\n" +
             "      }\n" +
-            // appendChild on an element already in the DOM moves it to the end
-            "      (document.body||document.documentElement).appendChild(nb);\n" +
+            // Move to end of <body> only if not already there (avoids triggering
+            // the MutationObserver in a tight loop on our own DOM change)
+            "      if(document.body&&nb!==document.body.lastChild)\n" +
+            "        document.body.appendChild(nb);\n" +
             "    }catch(e){}\n" +
             // ── Deep fixed-element scan: walk up to 5 DOM levels below <body>
             // to find position:fixed elements that match the nav bar profile
